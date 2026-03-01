@@ -18,7 +18,7 @@ const Home = () => {
       {/* Hero Section */}
       <section className="bg-gradient-to-br from-green-100 via-emerald-200 to-green-400 min-h-screen flex flex-col md:flex-row items-center justify-center px-4 py-8 sm:px-6 lg:px-10">
         <div className="max-w-xl md:w-1/2 text-center sm:text-left">
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-blue-500 mb-4">
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-red-500 mb-4">
             Health Monitoring System
           </h1>
           <p className="text-lg sm:text-xl mb-6 text-green-900">
