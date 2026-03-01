@@ -34,16 +34,16 @@ const AboutUs = () => {
           </div>
           <p className="text-gray-700 text-sm sm:text-base font-medium leading-relaxed">
             <Thermometer className="inline-block w-5 h-5 text-teal-500 mr-1" />
-            Monitar is an innovative initiative aimed at smartly monitoring
-            environmental parameters such as temperature and humidity. Developed
+            Monitor is an innovative initiative aimed at smartly monitoring
+            health parameters such as HR, SpO2, and Blood Glucose non-invasively. Developed
             by a dedicated team of research scholars, institute assistants, and
             technical developers from Greeninurja, this project integrates
             IoT-based hardware with modern web and mobile applications.
             <br />
             <br />
             <ShieldCheck className="inline-block w-5 h-5 text-green-500 mr-1" />
-            Our mission is to empower users with real-time environmental
-            insights that promote health and safety in various settings.
+            Our mission is to empower users with real-time health
+            monitoringthat promote health and safety in various settings.
           </p>
         </div>
 

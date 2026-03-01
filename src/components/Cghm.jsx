@@ -64,7 +64,7 @@ const CGHM = () => {
           <div className="text-center space-y-2">
             <p className="text-base sm:text-lg font-semibold text-gray-700">
               Introducing <span className="text-emerald-600">CGHM</span> – your
-              comprehensive solution for environmental monitoring and data
+              comprehensive solution for health monitoring and data
               analytics.
             </p>
           </div>

@@ -22,9 +22,7 @@ const Home = () => {
             Health Monitoring System
           </h1>
           <p className="text-lg sm:text-xl mb-6 text-green-900">
-            smart Health Monitoring System provides real-time temperature
-            and humidity data to keep you updated about your environment and
-            well-being. Designed for safety, accuracy, and ease of use.
+            Smart Health Monitoring System provides real-time Data logging and health parameters data to keep you updated about your health and well-being. Designed for research about health monitoring accuracy, and ease of use.
           </p>
           <button className="bg-green-600 text-white px-6 py-3 rounded-xl hover:bg-green-700 transition duration-300 shadow-md flex items-center gap-2 mx-auto sm:mx-0">
             Learn More <ArrowRightCircle className="w-5 h-5" />
