@@ -28,6 +28,7 @@ import TermsandCondition from "./components/TermsandCondition.jsx";
 import PrivacyandPolicy from "./components/PrivacyandPolicy.jsx";
 import VideoSaver from "./components/VideoSaver.jsx";
 import VideoGallery from "./components/VideoGallery.jsx";
+import DeleteAccount from "./pages/DeleteAccount.jsx";
 
 const ProtectedRoute = ({ children }) => {
   const [state, setState] = useState("loading");
@@ -117,6 +118,10 @@ const AppRoutes = createBrowserRouter([
       {
         path: "/CGHM",
         element: <CGHM />,
+      },
+      {
+        path: "/delete-account",
+        element: <DeleteAccount />,
       },
       {
         path: "/Monitoring", // Protected route with login or signup

@@ -232,7 +232,7 @@ const Profile = () => {
               )}
             </div>
 
-            <div className="flex justify-center">
+            <div className="flex justify-center gap-8">
               <button
                 onClick={handleLogout}
                 className="flex items-center gap-2 px-5 py-3 bg-red-500 text-white text-sm sm:text-base font-semibold rounded-lg hover:bg-red-600 transition shadow-md"
@@ -240,6 +240,13 @@ const Profile = () => {
                 <LogOut className="w-5 h-5" />
                 Logout
               </button>
+              <button
+  onClick={() => navigate("/delete-account")}
+  className="flex items-center gap-2 px-5 py-3 bg-red-400 text-white text-sm sm:text-base font-semibold rounded-lg hover:bg-red-700 transition shadow-md"
+>
+  <LogOut className="w-5 h-5" />
+  Delete Account
+</button>
             </div>
           </div>
         ) : (
