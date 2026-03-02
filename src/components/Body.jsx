@@ -15,7 +15,6 @@ import Footer from "./Footer";
 const Home = () => {
   return (
     <div className="font-sans text-gray-800">
-      {/* Hero Section */}
       <section className="bg-gradient-to-br from-green-100 via-emerald-200 to-green-400 min-h-screen flex flex-col md:flex-row items-center justify-center px-4 py-8 sm:px-6 lg:px-10">
         <div className="max-w-xl md:w-1/2 text-center sm:text-left">
           <h1 className="text-4xl sm:text-5xl font-extrabold text-green-900 mb-4">
@@ -36,8 +35,6 @@ const Home = () => {
           />
         </div>
       </section>
-
-      {/* Features Section */}
       <section className="bg-white py-16 px-6">
         <h2 className="text-3xl sm:text-4xl font-extrabold text-center text-green-700 mb-12">
           Why Choose Our System?
