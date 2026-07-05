@@ -244,7 +244,7 @@ const Head = () => {
             { name: "Data-Logger", path: "/DataLogger" },
             { name: "News and Articles", path: "/NewsAndArticles" },
             { name: "Contact Us", path: "/ContactUs" },
-            { name: "Video Saver", path: "/video-saver" },
+            { name: "CGHMHealthDashboard", path: "/video-saver" },
             { name: "Video Gallery", path: "/video-gallery" },
           ].map((link, index) => (
             <li
