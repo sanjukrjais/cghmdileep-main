@@ -113,7 +113,12 @@ const AppRoutes = createBrowserRouter([
       },
       {
         path: "/video-gallery",
-        element: <VideoGallery />,
+        // element: <VideoGallery />,
+          element: (
+          <ProtectedRoute>
+            <VideoGallery />
+          </ProtectedRoute>
+        ),
       },
       {
         path: "/CGHM",
