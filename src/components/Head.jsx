@@ -245,7 +245,7 @@ const Head = () => {
             { name: "News and Articles", path: "/NewsAndArticles" },
             { name: "Contact Us", path: "/ContactUs" },
             { name: "CGHMHealthDashboard", path: "/video-saver" },
-            { name: "CGHMHealthDashboard Gallery", path: "/video-gallery" },
+            { name: "CGHM Gallery", path: "/video-gallery" },
           ].map((link, index) => (
             <li
               key={index}

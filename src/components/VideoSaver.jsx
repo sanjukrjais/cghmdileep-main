@@ -329,18 +329,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import toast, { Toaster } from "react-hot-toast";
-
-// Mocking the Cloudinary upload function for this preview environment.
-// In your actual project, uncomment the next line and remove this mock function.
-// import { uploadToCloudinary } from '../utils/cloudinary';
-
-const uploadToCloudinary = async (blob) => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve("https://res.cloudinary.com/demo/video/upload/sample.webm");
-    }, 2000); // Simulated 2-second upload
-  });
-};
+import { uploadToCloudinary } from "../utils/cloudinary";
 
 export default function CGHMHealthDashboard() {
   // --- STATE MANAGEMENT ---
@@ -397,17 +386,9 @@ export default function CGHMHealthDashboard() {
   const stopReasonRef = useRef("NONE"); // NONE, SUCCESS, MOTION, CANCEL
 
   // Safe Environment Variable handling to avoid compilation errors in es2015 targets
-  let envBaseUrl = "http://localhost:3001/api";
-  try {
-    if (
-      typeof process !== "undefined" &&
-      process.env &&
-      process.env.REACT_APP_BACKEND_URL
-    ) {
-      envBaseUrl = process.env.REACT_APP_BACKEND_URL;
-    }
-  } catch (e) {}
-  const API_BASE = envBaseUrl;
+  // Vite env variable handling (Vite exposes only VITE_ prefixed vars via import.meta.env)
+  const API_BASE =
+    import.meta.env.VITE_BACKEND_URL || "http://localhost:3001/api";
 
   const updateAppState = useCallback((newState) => {
     appStateRef.current = newState;
@@ -754,9 +735,16 @@ export default function CGHMHealthDashboard() {
           body: formData,
         });
 
+        // if (!response.ok) {
+        //   const errorData = await response.json();
+        //   throw new Error(errorData.error || "Save failed");
+        // }
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || "Save failed");
+          const errorBody = await response.json().catch(() => null);
+          console.error("Cloudinary detailed error:", errorBody);
+          throw new Error(
+            `Upload failed: ${errorBody?.error?.message || response.statusText}`,
+          );
         }
 
         toast.success("✅ Video successfully server par save ho gaya!", {

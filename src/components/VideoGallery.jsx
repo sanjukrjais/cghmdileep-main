@@ -8,7 +8,8 @@ export default function VideoGallery() {
   const [error, setError] = useState(null);
 
   const API_BASE =
-    import.meta.env.VITE_BACKEND_URL || "http://localhost:3001/api";
+    import.meta.env.VITE_BACKEND_URL ||
+    "https://shree-mahadei-daily-needs-backend.onrender.com/api";
 
   const loadVideos = useCallback(async () => {
     setLoading(true);

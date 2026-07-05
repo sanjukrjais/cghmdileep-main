@@ -16,7 +16,12 @@ export const uploadToCloudinary = async (blob, options = {}) => {
         );
 
         if (!response.ok) {
-            throw new Error(`Upload failed: ${response.statusText}`);
+            const errorBody = await response.json().catch(() => null);
+            console.error("Cloudinary detailed error (FULL):", JSON.stringify(errorBody, null, 2));
+            console.error("Response status was:", response.status, response.statusText);
+            throw new Error(
+                `Upload failed: ${errorBody?.error?.message || response.statusText}`,
+            );
         }
 
         const data = await response.json();
