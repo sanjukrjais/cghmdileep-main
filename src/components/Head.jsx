@@ -183,9 +183,9 @@ const Head = () => {
               width={120}
               height={48}
             />
-            <span className="text-white font-semibold text-sm hidden md:block whitespace-nowrap">
+            {/* <span className="text-white font-semibold text-sm hidden md:block whitespace-nowrap">
               Home
-            </span>
+            </span> */}
           </Link>
           <a
             href="https://greeninurja.in"
