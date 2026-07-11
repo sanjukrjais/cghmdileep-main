@@ -128,22 +128,22 @@ const AppRoutes = createBrowserRouter([
         path: "/delete-account",
         element: <DeleteAccount />,
       },
-      {
-        path: "/Monitoring", // Protected route with login or signup
-        element: (
-          <ProtectedRoute>
-            <Monitoring />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: "/DataLogger", // Protected route with login or signup
-        element: (
-          <ProtectedRoute>
-            <DataLogger />
-          </ProtectedRoute>
-        ),
-      },
+      // {
+      //   path: "/Monitoring", // Protected route with login or signup
+      //   element: (
+      //     <ProtectedRoute>
+      //       <Monitoring />
+      //     </ProtectedRoute>
+      //   ),
+      // },
+      // {
+      //   path: "/DataLogger", // Protected route with login or signup
+      //   element: (
+      //     <ProtectedRoute>
+      //       <DataLogger />
+      //     </ProtectedRoute>
+      //   ),
+      // },
       {
         path: "/NewsAndArticles",
         element: <NewsAndArticles />,
