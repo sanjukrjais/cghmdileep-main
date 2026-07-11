@@ -553,8 +553,8 @@ export default function CGHMHealthDashboard() {
     const avgB = bSum / totalPixels;
 
     const isFingerDetected =
-      (avgR > 70 && avgR > avgG * 1.5 && avgR > avgB * 1.5) ||
-      (avgR < 40 && avgG < 40 && avgB < 40);
+      (avgR > 70 && avgR > avgG * 1.5 && avgR > avgB * 1.5) //||
+      //(avgR < 40 && avgG < 40 && avgB < 40);
 
     let isMotionDetected = false;
     if (prevFrameDataRef.current) {
