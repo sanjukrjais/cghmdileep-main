@@ -1,335 +1,12 @@
-// import React, { useState, useRef, useEffect, useCallback } from "react";
-// import { ref, uploadBytes, getDownloadURL, listAll } from "firebase/storage";
-// import { storage } from "../../firebase";
-// import toast from "react-hot-toast";
-// import { uploadToCloudinary } from "../utils/cloudinary";
-// export default function VideoSaver() {
-//   const [showCamera, setShowCamera] = useState(false);
-//   const [facingMode, setFacingMode] = useState("environment");
-//   const [isRecording, setIsRecording] = useState(false);
-//   const [recordedVideo, setRecordedVideo] = useState(null);
-//   const [uploading, setUploading] = useState(false);
-//   const [cameraReady, setCameraReady] = useState(false);
-//   const [recordingTime, setRecordingTime] = useState(0);
-//   const videoRef = useRef(null);
-//   const mediaRecorderRef = useRef(null);
-//   const recordedChunksRef = useRef([]);
-//   const timerRef = useRef(null);
-//   const API_BASE =
-//     import.meta.env.VITE_BACKEND_URL || "http://localhost:3001/api";
-//   // 🔥 Start Video Recording (Enhanced)
-//   const startRecording = useCallback(() => {
-//     if (!videoRef.current || !cameraReady) {
-//       toast.error("Camera not ready");
-//       return;
-//     }
-
-//     setIsRecording(true);
-//     setRecordingTime(0);
-//     recordedChunksRef.current = [];
-
-//     const stream = videoRef.current.srcObject;
-//     const options = {
-//       mimeType: "video/webm;codecs=vp9,opus",
-//     };
-
-//     const mediaRecorder = new MediaRecorder(stream, options);
-//     mediaRecorderRef.current = mediaRecorder;
-
-//     mediaRecorder.ondataavailable = (event) => {
-//       if (event.data.size > 0) {
-//         recordedChunksRef.current.push(event.data);
-//       }
-//     };
-
-//     mediaRecorder.onstop = () => {
-//       const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
-//       const videoUrl = URL.createObjectURL(blob);
-//       setRecordedVideo(videoUrl);
-//       if (timerRef.current) clearInterval(timerRef.current);
-//     };
-
-//     mediaRecorder.start(250); // Higher quality - 250ms chunks
-//     timerRef.current = setInterval(() => {
-//       setRecordingTime((prev) => prev + 0.25);
-//     }, 250);
-
-//     toast.success("🎥 Recording started!");
-//   }, [cameraReady]);
-
-//   // 🔥 Stop Video Recording
-//   const stopRecording = useCallback(() => {
-//     if (mediaRecorderRef.current?.state === "recording") {
-//       mediaRecorderRef.current.stop();
-//     }
-//     setIsRecording(false);
-//     if (timerRef.current) clearInterval(timerRef.current);
-//     toast.success(`✅ Recorded ${recordingTime.toFixed(1)}s video!`);
-//   }, [recordingTime]);
-
-//   // 🔥 Restart Recording
-//   const restartRecording = useCallback(() => {
-//     setRecordedVideo(null);
-//     URL.revokeObjectURL(recordedVideo);
-//     setIsRecording(false);
-//     setRecordingTime(0);
-//   }, [recordedVideo]);
-
-//   // 🔥 Open Camera
-//   const openCamera = useCallback(async () => {
-//     setShowCamera(true);
-//     setCameraReady(false);
-//     setRecordedVideo(null);
-//     toast.loading("Starting camera...", { id: "camera" });
-
-//     try {
-//       const constraints = {
-//         video: {
-//           facingMode: { ideal: facingMode },
-//           width: { ideal: 1280 },
-//           height: { ideal: 720 },
-//         },
-//         audio: {
-//           echoCancellation: true,
-//           noiseSuppression: true,
-//         },
-//       };
-
-//       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-//       const video = videoRef.current;
-
-//       if (video) {
-//         video.srcObject = stream;
-//         video.onloadedmetadata = () => {
-//           video.play().then(() => {
-//             setCameraReady(true);
-//             toast.success("✅ Camera ready!", { id: "camera" });
-//           });
-//         };
-//       }
-//     } catch (error) {
-//       console.error("Camera error:", error);
-//       toast.error("❌ Camera access denied", { id: "camera" });
-//       setShowCamera(false);
-//     }
-//   }, [facingMode]);
-
-//   // 🔥 Close Camera
-//   const closeCamera = useCallback(() => {
-//     setShowCamera(false);
-//     setCameraReady(false);
-//     setIsRecording(false);
-//     setRecordedVideo(null);
-//     setRecordingTime(0);
-
-//     if (timerRef.current) clearInterval(timerRef.current);
-//     if (videoRef.current?.srcObject) {
-//       videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
-//     }
-//   }, []);
-
-//   const saveVideo = useCallback(async () => {
-//     if (!recordedVideo) {
-//       toast.error("No video recorded");
-//       return;
-//     }
-
-//     setUploading(true);
-//     try {
-//       toast.loading("🎥 Uploading to Cloudinary...", { id: "upload" });
-
-//       // ✅ FIX 1: Create blob from MediaRecorder chunks (not URL)
-//       const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
-
-//       // ✅ FIX 2: Upload to Cloudinary
-//       const videoUrl = await uploadToCloudinary(blob);
-
-//       // ✅ FIX 3: Save to CORRECT backend endpoint with FormData
-//       const sellerId = localStorage.getItem("sellerId") || "guest";
-//       const formData = new FormData();
-//       formData.append("video", videoUrl); // Backend expects 'video'
-//       formData.append("sellerId", sellerId);
-//       formData.append("duration", recordingTime.toFixed(1));
-
-//       const response = await fetch(`${API_BASE}/videos`, {
-//         // ← /videos not /video-save
-//         method: "POST",
-//         body: formData, // ← FormData, not JSON
-//       });
-
-//       if (!response.ok) {
-//         const errorData = await response.json();
-//         throw new Error(errorData.error || "Save failed");
-//       }
-
-//       toast.success("✅ Video saved to gallery!", { id: "upload" });
-//       window.location.href = "/video-gallery"; // Go to gallery
-//     } catch (error) {
-//       console.error("Upload error:", error);
-//       toast.error(error.message || "Upload failed");
-//     } finally {
-//       setUploading(false);
-//       toast.dismiss("upload");
-//     }
-//   }, [recordedVideo, recordingTime, API_BASE, recordedChunksRef]);
-
-//   // 🔥 Switch Camera
-//   const switchCamera = useCallback(async () => {
-//     if (videoRef.current?.srcObject) {
-//       videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
-//     }
-
-//     const newFacingMode = facingMode === "environment" ? "user" : "environment";
-//     setFacingMode(newFacingMode);
-
-//     try {
-//       const stream = await navigator.mediaDevices.getUserMedia({
-//         video: { facingMode: { ideal: newFacingMode } },
-//         audio: true,
-//       });
-
-//       if (videoRef.current) {
-//         videoRef.current.srcObject = stream;
-//         setCameraReady(true);
-//       }
-//     } catch (error) {
-//       toast.error("Camera switch failed");
-//     }
-//   }, [facingMode]);
-
-//   useEffect(() => {
-//     return () => {
-//       if (timerRef.current) clearInterval(timerRef.current);
-//       if (videoRef.current?.srcObject) {
-//         videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
-//       }
-//     };
-//   }, []);
-
-//   return (
-//     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-6">
-//       <div className="max-w-4xl mx-auto bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl border border-indigo-200 p-8 space-y-8">
-//         <div className="text-center">
-//           <h1 className="text-4xl md:text-5xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent mb-4">
-//             🎥 Pro Video Recorder
-//           </h1>
-//           <p className="text-gray-600 text-lg font-medium">
-//             Production grade recording with timer & Firebase storage
-//           </p>
-//         </div>
-
-//         {/* Recorded Video Preview */}
-//         {recordedVideo && (
-//           <div className="space-y-4">
-//             <video
-//               src={recordedVideo}
-//               controls
-//               className="w-full h-80 rounded-3xl shadow-2xl bg-black/20"
-//             />
-//             <div className="flex gap-3 justify-center">
-//               <button
-//                 onClick={restartRecording}
-//                 className="px-8 py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white font-bold rounded-2xl shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300"
-//               >
-//                 🔄 New Recording
-//               </button>
-//               <button
-//                 onClick={saveVideo}
-//                 disabled={uploading}
-//                 className="px-8 py-4 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold rounded-2xl shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300 disabled:opacity-50"
-//               >
-//                 {uploading ? "⏳ Saving..." : "💾 Save to Firebase"}
-//               </button>
-//             </div>
-//           </div>
-//         )}
-
-//         {/* Camera Controls */}
-//         {!showCamera ? (
-//           <button
-//             onClick={openCamera}
-//             className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-8 px-12 rounded-3xl text-2xl font-black shadow-2xl hover:shadow-3xl hover:scale-105 transition-all duration-500 mx-auto block"
-//           >
-//             🎥 Start Recording
-//           </button>
-//         ) : (
-//           <div className="space-y-6">
-//             {/* Clean Camera View - NO OVERLAY BUTTONS */}
-//             <div className="relative bg-black/95 rounded-3xl overflow-hidden shadow-3xl">
-//               <video
-//                 ref={videoRef}
-//                 autoPlay
-//                 playsInline
-//                 muted
-//                 className="w-full h-[500px] md:h-[600px] object-cover"
-//               />
-
-//               {/* Status Bar Only */}
-//               <div className="absolute top-6 left-6 right-6 flex items-center justify-between bg-black/80 backdrop-blur-md rounded-2xl p-4 border border-white/20">
-//                 <div className="text-white font-bold">
-//                   <span
-//                     className={`px-3 py-1 rounded-full text-sm font-bold ${
-//                       cameraReady ? "bg-green-500" : "bg-yellow-500"
-//                     }`}
-//                   >
-//                     {cameraReady ? "✅ READY" : "🔄 LOADING"}
-//                   </span>
-//                   <div className="text-sm opacity-75 mt-1">
-//                     {facingMode === "environment" ? "Back Cam" : "Front Cam"}
-//                   </div>
-//                 </div>
-
-//                 {isRecording && (
-//                   <div className="flex items-center gap-3">
-//                     <div className="w-3 h-3 bg-red-500 rounded-full animate-ping" />
-//                     <span className="text-2xl font-mono text-red-400">
-//                       {recordingTime.toFixed(1)}s
-//                     </span>
-//                   </div>
-//                 )}
-//               </div>
-//             </div>
-
-//             {/* Enhanced Control Panel */}
-//             <div className="flex flex-col sm:flex-row gap-4 pt-6">
-//               <button
-//                 onClick={isRecording ? stopRecording : startRecording}
-//                 disabled={!cameraReady}
-//                 className={`flex-1 py-6 px-8 rounded-3xl font-black text-xl shadow-2xl transition-all duration-300 flex items-center justify-center gap-3 ${
-//                   isRecording
-//                     ? "bg-gradient-to-r from-red-500 to-rose-600 text-white hover:shadow-red-500/25 hover:scale-[1.02] shadow-red-500/25 animate-pulse"
-//                     : "bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:shadow-purple-500/25 hover:scale-[1.02] shadow-purple-500/25"
-//                 } disabled:opacity-50`}
-//               >
-//                 {isRecording ? <>⏹️ STOP</> : <>▶️ START RECORD</>}
-//               </button>
-
-//               <button
-//                 onClick={switchCamera}
-//                 disabled={!cameraReady || isRecording}
-//                 className="px-6 py-6 bg-gradient-to-r from-yellow-500 to-orange-500 text-black font-black rounded-3xl shadow-xl hover:shadow-yellow-500/25 hover:scale-[1.02] transition-all duration-300 disabled:opacity-50"
-//               >
-//                 🔄 Switch
-//               </button>
-//             </div>
-
-//             <button
-//               onClick={closeCamera}
-//               disabled={isRecording}
-//               className="w-full py-5 bg-gradient-to-r from-slate-500 to-gray-600 text-white font-bold rounded-2xl shadow-xl hover:shadow-gray-500/25 hover:scale-[1.02] transition-all duration-300 disabled:opacity-50"
-//             >
-//               ❌ Close Camera
-//             </button>
-//           </div>
-//         )}
-//       </div>
-//     </div>
-//   );
-// }
-
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import toast, { Toaster } from "react-hot-toast";
-import { uploadToCloudinary } from "../utils/cloudinary";
+
+// Mocking the Cloudinary upload for the preview environment
+const uploadToCloudinary = async (file) => {
+  return new Promise((resolve) => {
+    setTimeout(() => resolve("https://mock-cloudinary-url.com/video.webm"), 2000);
+  });
+};
 
 export default function CGHMHealthDashboard() {
   // --- STATE MANAGEMENT ---
@@ -365,16 +42,18 @@ export default function CGHMHealthDashboard() {
     pulse: "",
   });
 
-  // CSV Editor States
-  const [csvHeaders, setCsvHeaders] = useState([]);
-  const [csvData, setCsvData] = useState([]);
+  // --- NEW SMART EDITOR STATES (PDF + EXCEL) ---
+  const [pdfFileUrl, setPdfFileUrl] = useState(null);
+  const [excelData, setExcelData] = useState([]); // 2D array for rows and columns
   const [loadedFileName, setLoadedFileName] = useState("");
+  const [activeCell, setActiveCell] = useState({ rowIndex: null, colIndex: null });
+  const [dragHoverCell, setDragHoverCell] = useState({ rowIndex: null, colIndex: null });
 
-  // --- REFS FOR INTERNAL LOGIC (To avoid stale closures in requestAnimationFrame) ---
+  // --- REFS FOR INTERNAL LOGIC ---
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const appStateRef = useRef("IDLE"); // IDLE, CAMERA_ACTIVE, RECORDING, COOLDOWN, MODAL_OPEN
-  const [uiAppState, setUiAppState] = useState("IDLE"); // For re-rendering UI buttons
+  const appStateRef = useRef("IDLE");
+  const [uiAppState, setUiAppState] = useState("IDLE");
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
   const currentVideoBlobRef = useRef(null);
@@ -383,12 +62,23 @@ export default function CGHMHealthDashboard() {
   const prevFrameDataRef = useRef(null);
   const motionStartTimeRef = useRef(0);
   const videoTrackRef = useRef(null);
-  const stopReasonRef = useRef("NONE"); // NONE, SUCCESS, MOTION, CANCEL
+  const stopReasonRef = useRef("NONE");
+  
+  // Wake Lock Ref
+  const wakeLockRef = useRef(null);
 
-  // Safe Environment Variable handling to avoid compilation errors in es2015 targets
-  // Vite env variable handling (Vite exposes only VITE_ prefixed vars via import.meta.env)
-  const API_BASE =
-    import.meta.env.VITE_BACKEND_URL || "http://localhost:3001/api";
+  // Hardcoded for preview compatibility
+  const API_BASE = "http://localhost:3001/api";
+
+  // Dynamically load SheetJS to avoid module resolution errors in preview
+  useEffect(() => {
+    if (!window.XLSX) {
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js";
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
 
   const updateAppState = useCallback((newState) => {
     appStateRef.current = newState;
@@ -396,15 +86,33 @@ export default function CGHMHealthDashboard() {
   }, []);
 
   const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60)
-      .toString()
-      .padStart(2, "0");
+    const mins = Math.floor(seconds / 60).toString().padStart(2, "0");
     const secs = (seconds % 60).toString().padStart(2, "0");
     return `${mins}:${secs}`;
   };
 
   const updateStatus = (text, bgColorClass) => {
     setStatus({ text, color: bgColorClass });
+  };
+
+  // --- WAKE LOCK LOGIC ---
+  const requestWakeLock = async () => {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLockRef.current = await navigator.wakeLock.request('screen');
+        console.log('Screen Wake Lock is active - Screen will not sleep');
+      }
+    } catch (err) {
+      console.error(`Wake Lock error: ${err.name}, ${err.message}`);
+    }
+  };
+
+  const releaseWakeLock = () => {
+    if (wakeLockRef.current !== null) {
+      wakeLockRef.current.release().then(() => {
+        wakeLockRef.current = null;
+      });
+    }
   };
 
   // --- LOGIC: CAMERA & FLASH ---
@@ -418,6 +126,8 @@ export default function CGHMHealthDashboard() {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoTrackRef.current = stream.getVideoTracks()[0];
+        
+        await requestWakeLock(); // Prevent screen sleep on mobile
 
         const capabilities = videoTrackRef.current.getCapabilities();
         if (capabilities.torch) {
@@ -436,12 +146,14 @@ export default function CGHMHealthDashboard() {
     } catch (err) {
       console.error("Camera error:", err);
       updateStatus("Camera access deny ho gaya hai.", "bg-[#CC161C]");
-      toast.error("Please allow camera permissions.");
+      toast.error("Please allow camera permissions. Agar iOS hai toh Safari settings check karein.");
     }
   };
 
   const stopCamera = useCallback(() => {
     if (isFlashOn) toggleFlash(false);
+    
+    releaseWakeLock(); // Release screen lock when camera stops
 
     if (videoRef.current && videoRef.current.srcObject) {
       videoRef.current.srcObject.getTracks().forEach((t) => t.stop());
@@ -466,13 +178,10 @@ export default function CGHMHealthDashboard() {
       "Naya record banane ke liye 'Camera Start Karein' par click karein",
       "bg-[#05205A]",
     );
-  }, [isFlashOn]);
+  }, [isFlashOn, updateAppState]);
 
   const toggleFlash = async (turnOn) => {
-    if (
-      videoTrackRef.current &&
-      videoTrackRef.current.getCapabilities().torch
-    ) {
+    if (videoTrackRef.current && videoTrackRef.current.getCapabilities().torch) {
       try {
         await videoTrackRef.current.applyConstraints({
           advanced: [{ torch: turnOn }],
@@ -484,14 +193,16 @@ export default function CGHMHealthDashboard() {
     }
   };
 
-  // --- LOGIC: RECORDING & PIXEL PROCESSING ---
   const startRecordingLogic = () => {
     recordedChunksRef.current = [];
     const stream = videoRef.current.srcObject;
     try {
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "video/webm",
-      });
+      let mimeType = 'video/webm';
+      if (!MediaRecorder.isTypeSupported('video/webm')) {
+          mimeType = 'video/mp4';
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (event) => {
@@ -499,13 +210,9 @@ export default function CGHMHealthDashboard() {
       };
 
       mediaRecorder.onstop = () => {
-        if (
-          stopReasonRef.current === "SUCCESS" &&
-          recordedChunksRef.current.length > 0
-        ) {
-          currentVideoBlobRef.current = new Blob(recordedChunksRef.current, {
-            type: "video/webm",
-          });
+        if (stopReasonRef.current === "SUCCESS" && recordedChunksRef.current.length > 0) {
+          currentVideoBlobRef.current = new Blob(recordedChunksRef.current, { type: mimeType });
+          currentVideoBlobRef.current.extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
         } else {
           currentVideoBlobRef.current = null;
         }
@@ -539,9 +246,7 @@ export default function CGHMHealthDashboard() {
     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
     const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 
-    let rSum = 0,
-      gSum = 0,
-      bSum = 0;
+    let rSum = 0, gSum = 0, bSum = 0;
     for (let i = 0; i < pixels.length; i += 4) {
       rSum += pixels[i];
       gSum += pixels[i + 1];
@@ -552,9 +257,7 @@ export default function CGHMHealthDashboard() {
     const avgG = gSum / totalPixels;
     const avgB = bSum / totalPixels;
 
-    const isFingerDetected =
-      (avgR > 70 && avgR > avgG * 1.5 && avgR > avgB * 1.5);
-      //  || (avgR < 40 && avgG < 40 && avgB < 40);
+    const isFingerDetected = (avgR > 70 && avgR > avgG * 1.5 && avgR > avgB * 1.5);
 
     let isMotionDetected = false;
     if (prevFrameDataRef.current) {
@@ -568,19 +271,11 @@ export default function CGHMHealthDashboard() {
       }
       isMotionDetected = diffSum / (totalPixels * 3) > 5.0;
     }
-    prevFrameDataRef.current = ctx.getImageData(
-      0,
-      0,
-      canvas.width,
-      canvas.height,
-    );
+    prevFrameDataRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
     if (currentState === "COOLDOWN") {
       // Wait phase
-    } else if (
-      currentState === "CAMERA_ACTIVE" ||
-      currentState === "RECORDING"
-    ) {
+    } else if (currentState === "CAMERA_ACTIVE" || currentState === "RECORDING") {
       if (!isFingerDetected) {
         if (currentState === "RECORDING") {
           stopReasonRef.current = "SUCCESS";
@@ -610,15 +305,9 @@ export default function CGHMHealthDashboard() {
               clearInterval(timerRef.current);
             }
             updateAppState("CAMERA_ACTIVE");
-            updateStatus(
-              "Too much motion. Recording suspended",
-              "bg-[#CC161C]",
-            );
+            updateStatus("Too much motion. Recording suspended", "bg-[#CC161C]");
           } else {
-            updateStatus(
-              "Motion detected. Please keep steady (Stationary) finger",
-              "bg-orange-500",
-            );
+            updateStatus("Motion detected. Please keep steady (Stationary) finger", "bg-orange-500");
           }
         } else {
           motionStartTimeRef.current = 0;
@@ -630,32 +319,26 @@ export default function CGHMHealthDashboard() {
       }
     }
 
-    if (
-      appStateRef.current !== "IDLE" &&
-      appStateRef.current !== "MODAL_OPEN"
-    ) {
+    if (appStateRef.current !== "IDLE" && appStateRef.current !== "MODAL_OPEN") {
       animationFrameIdRef.current = requestAnimationFrame(processVideoFrame);
     }
   }, [updateAppState]);
 
-  // --- LOGIC: SAVING & UPLOADING ---
   const saveAndDownloadFiles = async (finalRefData = referenceData) => {
     setShowReferenceModal(false);
 
-    const timestamp = new Date()
-      .toISOString()
-      .replace(/[:.]/g, "-")
-      .slice(0, 19);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     const safeName = subjectData.name.replace(/[^a-zA-Z0-9]/g, "_");
     const fileNameBase = `${timestamp}_${safeName}`;
 
-    // Download Video (.webm) Locally
+    // Download Video Locally
     if (currentVideoBlobRef.current) {
       const videoUrl = URL.createObjectURL(currentVideoBlobRef.current);
       const aVideo = document.createElement("a");
       aVideo.style.display = "none";
       aVideo.href = videoUrl;
-      aVideo.download = `${fileNameBase}.webm`;
+      const ext = currentVideoBlobRef.current.extension || 'webm';
+      aVideo.download = `${fileNameBase}.${ext}`;
       document.body.appendChild(aVideo);
       aVideo.click();
       setTimeout(() => {
@@ -665,29 +348,12 @@ export default function CGHMHealthDashboard() {
     }
 
     // Create and Download CSV Locally
-    const headers = [
-      "Timestamp",
-      "ID",
-      "Name",
-      "Age",
-      "Gender",
-      "Mobile",
-      "Height(cm)",
-      "Systolic BP",
-      "Diastolic BP",
-      "Pulse Rate",
-    ];
+    const headers = ["Timestamp", "ID", "Name", "Age", "Gender", "Mobile", "Height(cm)", "Systolic BP", "Diastolic BP", "Pulse Rate"];
     const rowData = [
       new Date().toLocaleString().replace(/,/g, ""),
-      subjectData.id,
-      subjectData.name,
-      subjectData.age,
-      subjectData.gender,
-      subjectData.mobile || "N/A",
-      subjectData.height || "N/A",
-      finalRefData.sys || "N/A",
-      finalRefData.dia || "N/A",
-      finalRefData.pulse || "N/A",
+      subjectData.id, subjectData.name, subjectData.age, subjectData.gender,
+      subjectData.mobile || "N/A", subjectData.height || "N/A",
+      finalRefData.sys || "N/A", finalRefData.dia || "N/A", finalRefData.pulse || "N/A",
     ];
 
     const csvContent = headers.join(",") + "\n" + rowData.join(",");
@@ -708,20 +374,12 @@ export default function CGHMHealthDashboard() {
     stopCamera();
     toast.success(`Subject ${subjectData.name} ka local data save ho gaya!`);
 
-    // --- CLOUD UPLOAD LOGIC ---
+    // Cloud Upload
     if (currentVideoBlobRef.current) {
       setUploading(true);
       try {
-        toast.loading("🎥 Cloudinary par video upload ho raha hai...", {
-          id: "upload",
-        });
-
-        // 1. Upload to Cloudinary
-        const uploadedVideoUrl = await uploadToCloudinary(
-          currentVideoBlobRef.current,
-        );
-
-        // 2. Save to Backend Database
+        toast.loading("🎥 Cloudinary par video upload ho raha hai...", { id: "upload" });
+        const uploadedVideoUrl = await uploadToCloudinary(currentVideoBlobRef.current);
         const sellerId = localStorage.getItem("sellerId") || "guest";
         const formData = new FormData();
         formData.append("video", uploadedVideoUrl);
@@ -729,141 +387,161 @@ export default function CGHMHealthDashboard() {
         formData.append("duration", recordingTime.toString());
         formData.append("subjectName", subjectData.name);
 
-        // Making the API call to your backend
         const response = await fetch(`${API_BASE}/videos`, {
           method: "POST",
           body: formData,
         });
 
-        // if (!response.ok) {
-        //   const errorData = await response.json();
-        //   throw new Error(errorData.error || "Save failed");
-        // }
         if (!response.ok) {
           const errorBody = await response.json().catch(() => null);
-          console.error("Cloudinary detailed error:", errorBody);
-          throw new Error(
-            `Upload failed: ${errorBody?.error?.message || response.statusText}`,
-          );
+          throw new Error(`Upload failed: ${errorBody?.error?.message || response.statusText}`);
         }
-
-        toast.success("✅ Video successfully server par save ho gaya!", {
-          id: "upload",
-        });
+        toast.success("✅ Video successfully server par save ho gaya!", { id: "upload" });
       } catch (error) {
         console.error("Upload error:", error);
-        // We show a mild error since the backend might not be running locally in preview
-        toast.error(
-          "Cloud upload fail (backend check karein), lekin local files save ho chuki hain.",
-          { id: "upload", duration: 5000 },
-        );
+        toast.error("Cloud upload fail, lekin local files save ho chuki hain.", { id: "upload", duration: 5000 });
       } finally {
         setUploading(false);
       }
     }
   };
 
-  // --- LOGIC: CSV EDITOR ---
-  const handleCsvUpload = (e) => {
+  // ==========================================
+  // --- NEW LOGIC: SMART EDITOR (TAB 2) ---
+  // ==========================================
+  const handlePdfUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const fileURL = URL.createObjectURL(file);
+      setPdfFileUrl(fileURL);
+    }
+  };
+
+  const handleExcelUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setLoadedFileName("CGHM_" + file.name);
 
-    setLoadedFileName(file.name);
+    if (!window.XLSX) {
+      toast.error("Excel library load ho rahi hai, kripya 2 second ruk kar wapas upload karein.");
+      return;
+    }
 
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target.result;
-      const rows = text.split("\n").filter((row) => row.trim() !== "");
-
-      if (rows.length > 0) {
-        setCsvHeaders(rows[0].split(","));
-        const dataRows = rows.slice(1).map((row) => row.split(","));
-        setCsvData(dataRows);
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target.result;
+        const wb = window.XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        setExcelData(data);
+      } catch (error) {
+        console.error("Error loading Excel:", error);
+        toast.error("File load karne mein error. Kripya valid Excel/CSV select karein.");
       }
     };
-    reader.readAsText(file);
+    reader.readAsBinaryString(file);
   };
 
-  const handleCellUpdate = (rowIndex, colIndex, newValue) => {
-    const updatedData = [...csvData];
-    updatedData[rowIndex][colIndex] = newValue
-      .replace(/(\r\n|\n|\r)/gm, "")
-      .replace(/,/g, "");
-    setCsvData(updatedData);
-  };
-
-  const updateAndDownloadCsv = () => {
-    if (csvHeaders.length === 0) return;
-
-    let csvContent = csvHeaders.join(",") + "\n";
-    csvData.forEach((row) => {
-      csvContent += row.join(",") + "\n";
+  const updateCellData = (rowIndex, colIndex, value) => {
+    setExcelData((prev) => {
+      const newData = [...prev];
+      const actualRowIndex = rowIndex + 1; // +1 because index 0 is Header
+      if (!newData[actualRowIndex]) newData[actualRowIndex] = [];
+      newData[actualRowIndex][colIndex] = value;
+      return newData;
     });
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.style.display = "none";
-    a.href = url;
-    a.download = loadedFileName;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 100);
-
-    toast.success(
-      "CSV File Update ho gayi hai! Theek ki gayi file aapke Downloads folder mein aa gayi hai.",
-    );
   };
 
-  // Cleanup on unmount
+  const autoAdvance = (currentRowIndex, colIndex) => {
+    const nextRowIndex = currentRowIndex + 1;
+    if (nextRowIndex < excelData.length - 1) {
+      setActiveCell({ rowIndex: nextRowIndex, colIndex });
+      setTimeout(() => {
+        const nextCell = document.getElementById(`cell-${nextRowIndex}-${colIndex}`);
+        if (nextCell) {
+          nextCell.focus();
+          nextCell.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 10);
+    }
+  };
+
+  const handleManualEdit = (rowIndex, colIndex, text) => {
+    updateCellData(rowIndex, colIndex, text.trim());
+  };
+
+  const handlePaste = (e, rowIndex, colIndex) => {
+    e.preventDefault();
+    const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+    if (pastedText) {
+      const cleanText = pastedText.trim();
+      updateCellData(rowIndex, colIndex, cleanText);
+      
+      // Update DOM temporarily for immediate feedback
+      e.target.innerText = cleanText;
+      
+      // Auto-advance
+      autoAdvance(rowIndex, colIndex);
+    }
+  };
+
+  const handleDrop = (e, rowIndex, colIndex) => {
+    e.preventDefault();
+    setDragHoverCell({ rowIndex: null, colIndex: null });
+    const droppedText = e.dataTransfer.getData('text');
+    if (droppedText) {
+      const cleanText = droppedText.trim();
+      updateCellData(rowIndex, colIndex, cleanText);
+      setActiveCell({ rowIndex, colIndex });
+      
+      // Update DOM temporarily
+      e.target.innerText = cleanText;
+      
+      autoAdvance(rowIndex, colIndex);
+    }
+  };
+
+  const downloadExcel = () => {
+    try {
+      if (!window.XLSX) return;
+      const worksheet = window.XLSX.utils.aoa_to_sheet(excelData);
+      const workbook = window.XLSX.utils.book_new();
+      window.XLSX.book_append_sheet(workbook, worksheet, "CGHM_Data");
+      window.XLSX.writeFile(workbook, loadedFileName || "updated_data.xlsx");
+      toast.success("Excel File successfully update aur download ho gayi hai!");
+    } catch (error) {
+      console.error("Export failed:", error);
+      toast.error("File download me problem aayi.");
+    }
+  };
+
   useEffect(() => {
-    return () => {
-      stopCamera();
-    };
+    return () => stopCamera();
   }, [stopCamera]);
 
   return (
     <div className="bg-gray-50 min-h-screen flex flex-col items-center font-sans relative pb-10">
       <Toaster position="top-center" reverseOrder={false} />
 
-      {/* Top Navigation Tabs */}
-      <div
-        className={`w-full shadow-md mb-8 flex justify-center border-b-4 border-[#12863B] sticky top-0 z-40 bg-white`}
-      >
+      <div className={`w-full shadow-md mb-8 flex justify-center border-b-4 border-[#12863B] sticky top-0 z-40 bg-white`}>
         <div className="flex max-w-2xl w-full">
-          <button
-            onClick={() => setActiveTab("record")}
-            className={`flex-1 py-4 font-bold text-lg transition-colors ${activeTab === "record" ? "text-white bg-[#05205A]" : "text-gray-500 bg-gray-200 hover:bg-gray-300"}`}
-          >
+          <button onClick={() => setActiveTab("record")} className={`flex-1 py-4 font-bold text-lg transition-colors ${activeTab === "record" ? "text-white bg-[#05205A]" : "text-gray-500 bg-gray-200 hover:bg-gray-300"}`}>
             🎥 Recording Dashboard
           </button>
-          <button
-            onClick={() => setActiveTab("edit")}
-            className={`flex-1 py-4 font-bold text-lg transition-colors ${activeTab === "edit" ? "text-white bg-[#05205A]" : "text-gray-500 bg-gray-200 hover:bg-gray-300"}`}
-          >
-            📝 Data Editor (CSV)
+          <button onClick={() => setActiveTab("edit")} className={`flex-1 py-4 font-bold text-lg transition-colors ${activeTab === "edit" ? "text-white bg-[#05205A]" : "text-gray-500 bg-gray-200 hover:bg-gray-300"}`}>
+            📝 Data Editor (Smart Split)
           </button>
         </div>
       </div>
 
-      {/* Header Logo Area */}
       <div className="bg-white p-6 rounded-2xl shadow-md w-11/12 max-w-2xl text-center border-t-8 border-[#12863B] mb-8">
         <div className="flex justify-center items-center gap-2 mb-2">
-          <h1 className="text-5xl font-extrabold tracking-tight text-[#12863B]">
-            C
-          </h1>
-          <h1 className="text-5xl font-extrabold tracking-tight text-[#05205A]">
-            G
-          </h1>
-          <h1 className="text-5xl font-extrabold tracking-tight text-[#CC161C]">
-            H
-          </h1>
-          <h1 className="text-5xl font-extrabold tracking-tight text-[#05205A]">
-            M
-          </h1>
+          <h1 className="text-5xl font-extrabold tracking-tight text-[#12863B]">C</h1>
+          <h1 className="text-5xl font-extrabold tracking-tight text-[#05205A]">G</h1>
+          <h1 className="text-5xl font-extrabold tracking-tight text-[#CC161C]">H</h1>
+          <h1 className="text-5xl font-extrabold tracking-tight text-[#05205A]">M</h1>
         </div>
         <p className="text-lg font-bold uppercase tracking-wider text-[#05205A]">
           - Monitor Health Smartly -
@@ -873,80 +551,41 @@ export default function CGHMHealthDashboard() {
       {/* TAB 1: RECORDING DASHBOARD */}
       {activeTab === "record" && (
         <div className="bg-white p-8 rounded-2xl shadow-xl w-11/12 max-w-2xl flex flex-col items-center relative">
-          <div
-            className={`w-full py-6 px-4 rounded-xl text-center text-xl font-bold text-white shadow-inner mb-6 ${status.color} transition-colors duration-300`}
-          >
+          <div className={`w-full py-6 px-4 rounded-xl text-center text-xl font-bold text-white shadow-inner mb-6 ${status.color} transition-colors duration-300`}>
             {status.text}
           </div>
 
           <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden shadow-inner flex justify-center items-center mb-6 border-4 border-gray-100">
-            {cameraOff && (
-              <span className="text-gray-400 font-medium text-lg">
-                Camera off hai
-              </span>
-            )}
-
-            <video
-              ref={videoRef}
-              className={`w-full h-full object-cover ${cameraOff ? "hidden" : ""}`}
-              playsInline
-              muted
-              autoPlay
-            />
-
+            {cameraOff && <span className="text-gray-400 font-medium text-lg">Camera off hai</span>}
+            <video ref={videoRef} className={`w-full h-full object-cover ${cameraOff ? "hidden" : ""}`} playsInline muted autoPlay />
+            
             {uiAppState === "RECORDING" && (
               <div className="absolute bottom-4 right-4 bg-black/70 text-white px-4 py-2 rounded-full font-mono text-xl flex items-center gap-2 shadow-lg border border-red-500/50 z-10">
                 <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
                 <span>{formatTime(recordingTime)}</span>
               </div>
             )}
-
             <canvas ref={canvasRef} width="64" height="64" className="hidden" />
           </div>
 
-          {/* Flash Controls */}
           {hasFlash && (
             <div className="flex gap-2 w-full mt-2 mb-4 border-t pt-4 border-gray-100">
-              <button
-                onClick={() => toggleFlash(true)}
-                className={`flex-1 py-3 px-4 rounded-lg font-bold text-white shadow bg-[#12863B] transition-opacity ${isFlashOn ? "opacity-50 cursor-default" : "hover:opacity-90"}`}
-              >
+              <button onClick={() => toggleFlash(true)} className={`flex-1 py-3 px-4 rounded-lg font-bold text-white shadow bg-[#12863B] transition-opacity ${isFlashOn ? "opacity-50 cursor-default" : "hover:opacity-90"}`}>
                 Flash ON (LED)
               </button>
-              <button
-                onClick={() => toggleFlash(false)}
-                className={`flex-1 py-3 px-4 rounded-lg font-bold text-white shadow bg-[#CC161C] transition-opacity ${!isFlashOn ? "opacity-50 cursor-default" : "hover:opacity-90"}`}
-              >
+              <button onClick={() => toggleFlash(false)} className={`flex-1 py-3 px-4 rounded-lg font-bold text-white shadow bg-[#CC161C] transition-opacity ${!isFlashOn ? "opacity-50 cursor-default" : "hover:opacity-90"}`}>
                 Flash OFF
               </button>
             </div>
           )}
 
-          {/* Main Action Buttons */}
           <div className="flex gap-4 w-full">
             {uiAppState === "IDLE" ? (
-              <button
-                onClick={() => {
-                  setSubjectData({
-                    id: "",
-                    name: "",
-                    age: "",
-                    gender: "",
-                    mobile: "",
-                    height: "",
-                  });
-                  setShowSubjectModal(true);
-                }}
-                className="flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#05205A] hover:opacity-90"
-              >
+              <button onClick={() => { setSubjectData({ id: "", name: "", age: "", gender: "", mobile: "", height: "" }); setShowSubjectModal(true); }} className="flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#05205A] hover:opacity-90">
                 Camera Start Karein
               </button>
             ) : (
-              <button
-                onClick={stopCamera}
-                disabled={uploading}
-                className={`flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#CC161C] transition-opacity ${uploading ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"}`}
-              >
+              <button onClick={stopCamera} disabled={uploading} className={`flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#CC161C] transition-opacity ${uploading ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"}`}>
                 Cancel / Stop Process
               </button>
             )}
@@ -954,85 +593,98 @@ export default function CGHMHealthDashboard() {
         </div>
       )}
 
-      {/* TAB 2: DATA EDITOR */}
+      {/* TAB 2: SMART DATA EDITOR (PDF + EXCEL) */}
       {activeTab === "edit" && (
-        <div className="bg-white p-8 rounded-2xl shadow-xl w-11/12 max-w-5xl flex flex-col items-center">
-          <h2 className="text-2xl font-bold text-[#05205A] mb-2 w-full text-left">
-            CSV Data Editor
-          </h2>
-          <p className="text-gray-600 mb-6 w-full text-left">
-            Apne device se CSV file select karein. Green boxes (Name, Age, BP,
-            etc.) par click karke aap koi bhi mistake theek kar sakte hain.
-          </p>
-
-          <div className="w-full mb-6 p-4 border-2 border-dashed border-gray-300 rounded-lg text-center bg-gray-50">
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleCsvUpload}
-              className="w-full text-gray-700 font-bold"
-            />
+        <div className="bg-white p-6 rounded-2xl shadow-xl w-11/12 max-w-[98%] xl:max-w-[90vw] flex flex-col lg:flex-row gap-6 mb-10 h-[80vh] min-h-[600px]">
+          
+          {/* LEFT PANEL: PDF VIEWER */}
+          <div className="flex-1 flex flex-col border-2 border-gray-200 rounded-xl overflow-hidden relative bg-gray-50 h-full">
+            <div className="bg-[#eef2f6] p-4 border-l-4 border-[#05205A] flex items-center justify-between z-10 shadow-sm">
+              <h3 className="text-[#05205A] font-bold flex items-center gap-2 text-lg">📄 1. PDF Viewer</h3>
+              <input type="file" accept=".pdf" onChange={handlePdfUpload} className="text-sm cursor-pointer file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#05205A] file:text-white hover:file:bg-[#0a2f7c]" />
+            </div>
+            <div className="flex-1 relative w-full h-full bg-white">
+               {!pdfFileUrl && <div className="absolute inset-0 flex items-center justify-center text-gray-400 italic">PDF file select karein...</div>}
+               {pdfFileUrl && <iframe src={pdfFileUrl} className="w-full h-full border-none" title="PDF Viewer" />}
+            </div>
           </div>
 
-          {csvHeaders.length > 0 && (
-            <div className="w-full overflow-x-auto mb-6 shadow-sm rounded-lg border border-gray-200">
-              <table className="min-w-full border-collapse">
-                <thead>
-                  <tr>
-                    {csvHeaders.map((header, i) => (
-                      <th
-                        key={i}
-                        className="border border-gray-200 p-3 bg-[#05205A] text-white text-left whitespace-nowrap"
-                      >
-                        {header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {csvData.map((row, rowIndex) => (
-                    <tr key={rowIndex}>
-                      {row.map((cellValue, colIndex) => {
-                        const isEditable = colIndex > 0;
-                        return (
-                          <td
-                            key={colIndex}
-                            className={`border border-gray-200 p-3 whitespace-nowrap outline-none transition-all duration-200 ${isEditable ? "bg-[#f0fdf4] border-2 border-dashed border-[#12863B] cursor-text hover:bg-[#dcfce7] focus:bg-[#bbf7d0] focus:border-solid" : ""}`}
-                            contentEditable={isEditable}
-                            suppressContentEditableWarning={true}
-                            onBlur={(e) =>
-                              handleCellUpdate(
-                                rowIndex,
-                                colIndex,
-                                e.target.innerText,
-                              )
-                            }
-                            title={isEditable ? "Click to edit this value" : ""}
-                          >
-                            {cellValue}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* RIGHT PANEL: EXCEL EDITOR */}
+          <div className="flex-1 flex flex-col border-2 border-gray-200 rounded-xl overflow-hidden relative bg-gray-50 h-full">
+            <div className="bg-[#eef2f6] p-4 border-l-4 border-[#12863B] flex flex-col sm:flex-row sm:items-center justify-between z-10 gap-3 shadow-sm">
+              <div>
+                <h3 className="text-[#05205A] font-bold flex items-center gap-2 text-lg">📊 2. Excel Editor</h3>
+                <span className="text-xs text-[#CC161C] font-semibold mt-1 block">⚡ Trick: Select in PDF &gt; Ctrl+C &gt; Click Cell &gt; Ctrl+V (ya Drag-Drop)</span>
+              </div>
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                  <input type="file" accept=".xlsx, .xls, .csv" onChange={handleExcelUpload} className="text-sm cursor-pointer w-full sm:w-48 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#12863B] file:text-white hover:file:bg-[#0f7332]" />
+                  {excelData.length > 0 && (
+                      <button onClick={downloadExcel} className="bg-[#12863B] text-white px-4 py-2 rounded-full font-bold text-sm hover:bg-[#0f7332] transition shadow whitespace-nowrap">
+                          💾 Save Data
+                      </button>
+                  )}
+              </div>
             </div>
-          )}
+            
+            <div className="flex-1 overflow-auto bg-white relative p-0 m-0">
+               {excelData.length === 0 && <div className="absolute inset-0 flex items-center justify-center text-gray-400 italic">Excel ya CSV file select karein...</div>}
+               
+               {excelData.length > 0 && (
+                   <table className="w-full border-collapse text-left">
+                      <thead>
+                          <tr>
+                              {excelData[0].map((header, i) => (
+                                  <th key={i} className="border border-gray-300 p-3 bg-[#05205A] text-white whitespace-nowrap sticky top-0 z-10 font-semibold text-sm tracking-wide">
+                                      {header}
+                                  </th>
+                              ))}
+                          </tr>
+                      </thead>
+                      <tbody>
+                          {excelData.slice(1).map((row, rowIndex) => (
+                              <tr key={rowIndex} className="hover:bg-gray-50 transition-colors">
+                                  {excelData[0].map((_, colIndex) => {
+                                      const cellValue = row[colIndex] || "";
+                                      
+                                      const isActive = activeCell.rowIndex === rowIndex && activeCell.colIndex === colIndex;
+                                      const isDragHover = dragHoverCell.rowIndex === rowIndex && dragHoverCell.colIndex === colIndex;
+                                      
+                                      // CGHM Theme Conditional Classes for Cells
+                                      let cellClasses = "border border-gray-300 p-3 whitespace-nowrap outline-none transition-all duration-200 text-sm ";
+                                      if (isActive) {
+                                          cellClasses += "bg-[#e8f5e9] outline-[3px] outline-[#12863B] outline text-black font-semibold z-10 relative ";
+                                      } else if (isDragHover) {
+                                          cellClasses += "bg-[#bbf7d0] border-2 border-dashed border-[#12863B] shadow-inner ";
+                                      } else {
+                                          cellClasses += "focus:bg-[#f0f4fa] focus:outline focus:outline-2 focus:outline-[#05205A] ";
+                                      }
 
-          {csvHeaders.length > 0 && (
-            <>
-              <button
-                onClick={updateAndDownloadCsv}
-                className="w-full py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#12863B] hover:opacity-90"
-              >
-                Update & Download CSV
-              </button>
-              <p className="mt-2 text-sm text-gray-500 font-mono">
-                Current File: {loadedFileName}
-              </p>
-            </>
-          )}
+                                      return (
+                                          <td 
+                                              key={colIndex}
+                                              id={`cell-${rowIndex}-${colIndex}`}
+                                              className={cellClasses}
+                                              contentEditable={true}
+                                              suppressContentEditableWarning={true}
+                                              onClick={() => setActiveCell({ rowIndex, colIndex })}
+                                              onBlur={(e) => handleManualEdit(rowIndex, colIndex, e.target.innerText)}
+                                              onPaste={(e) => handlePaste(e, rowIndex, colIndex)}
+                                              onDragOver={(e) => { e.preventDefault(); setDragHoverCell({ rowIndex, colIndex }); }}
+                                              onDragLeave={() => setDragHoverCell({ rowIndex: null, colIndex: null })}
+                                              onDrop={(e) => handleDrop(e, rowIndex, colIndex)}
+                                          >
+                                              {cellValue}
+                                          </td>
+                                      )
+                                  })}
+                              </tr>
+                          ))}
+                      </tbody>
+                   </table>
+               )}
+            </div>
+          </div>
+
         </div>
       )}
 
@@ -1040,121 +692,26 @@ export default function CGHMHealthDashboard() {
       {showSubjectModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
-            <div className="bg-[#05205A] p-4 text-center sticky top-0 z-10">
-              <h2 className="text-xl font-bold text-white">Subject Details</h2>
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                setShowSubjectModal(false);
-                initCamera();
-              }}
-              className="p-6 space-y-4 max-h-[80vh] overflow-y-auto"
-            >
+            <div className="bg-[#05205A] p-4 text-center sticky top-0 z-10"><h2 className="text-xl font-bold text-white">Subject Details</h2></div>
+            <form onSubmit={(e) => { e.preventDefault(); setShowSubjectModal(false); initCamera(); }} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">
-                    ID Number *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={subjectData.id}
-                    onChange={(e) =>
-                      setSubjectData({ ...subjectData, id: e.target.value })
-                    }
-                    className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">
-                    Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={subjectData.name}
-                    onChange={(e) =>
-                      setSubjectData({ ...subjectData, name: e.target.value })
-                    }
-                    className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none"
-                  />
-                </div>
+                <div><label className="block text-sm font-bold text-gray-700 mb-1">ID Number *</label><input type="text" required value={subjectData.id} onChange={(e) => setSubjectData({ ...subjectData, id: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
+                <div><label className="block text-sm font-bold text-gray-700 mb-1">Name *</label><input type="text" required value={subjectData.name} onChange={(e) => setSubjectData({ ...subjectData, name: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
               </div>
               <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-bold text-gray-700 mb-1">Age *</label><input type="number" required value={subjectData.age} onChange={(e) => setSubjectData({ ...subjectData, age: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">
-                    Age *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    value={subjectData.age}
-                    onChange={(e) =>
-                      setSubjectData({ ...subjectData, age: e.target.value })
-                    }
-                    className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">
-                    Gender *
-                  </label>
-                  <select
-                    required
-                    value={subjectData.gender}
-                    onChange={(e) =>
-                      setSubjectData({ ...subjectData, gender: e.target.value })
-                    }
-                    className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none"
-                  >
-                    <option value="">Select...</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Gender *</label>
+                  <select required value={subjectData.gender} onChange={(e) => setSubjectData({ ...subjectData, gender: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none">
+                    <option value="">Select...</option><option value="Male">Male</option><option value="Female">Female</option><option value="Other">Other</option>
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">
-                  Mobile (Optional)
-                </label>
-                <input
-                  type="tel"
-                  value={subjectData.mobile}
-                  onChange={(e) =>
-                    setSubjectData({ ...subjectData, mobile: e.target.value })
-                  }
-                  className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">
-                  Height cm (Optional)
-                </label>
-                <input
-                  type="number"
-                  value={subjectData.height}
-                  onChange={(e) =>
-                    setSubjectData({ ...subjectData, height: e.target.value })
-                  }
-                  className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none"
-                />
-              </div>
+              <div><label className="block text-sm font-bold text-gray-700 mb-1">Mobile (Optional)</label><input type="tel" value={subjectData.mobile} onChange={(e) => setSubjectData({ ...subjectData, mobile: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
+              <div><label className="block text-sm font-bold text-gray-700 mb-1">Height cm (Optional)</label><input type="number" value={subjectData.height} onChange={(e) => setSubjectData({ ...subjectData, height: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
               <div className="flex gap-3 pt-4 mt-2 border-t sticky bottom-0 bg-white z-10">
-                <button
-                  type="button"
-                  onClick={() => setShowSubjectModal(false)}
-                  className="flex-1 py-2 px-4 border-2 border-gray-300 rounded-lg font-bold hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2 px-4 bg-[#12863B] text-white rounded-lg font-bold hover:opacity-90"
-                >
-                  Submit & Start
-                </button>
+                <button type="button" onClick={() => setShowSubjectModal(false)} className="flex-1 py-2 px-4 border-2 border-gray-300 rounded-lg font-bold hover:bg-gray-50">Cancel</button>
+                <button type="submit" className="flex-1 py-2 px-4 bg-[#12863B] text-white rounded-lg font-bold hover:opacity-90">Submit & Start</button>
               </div>
             </form>
           </div>
@@ -1165,92 +722,17 @@ export default function CGHMHealthDashboard() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-t-8 border-[#12863B] transform transition-all">
             <div className="p-6 text-center">
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">
-                Recording Complete!
-              </h2>
-              <p className="text-sm text-gray-500 mb-6">
-                Aap reference values abhi enter kar sakte hain ya skip karke
-                baad me Data Editor me daal sakte hain.
-              </p>
-
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  saveAndDownloadFiles(referenceData);
-                }}
-                className="space-y-4 text-left max-h-[70vh] overflow-y-auto px-1"
-              >
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">Recording Complete!</h2>
+              <p className="text-sm text-gray-500 mb-6">Aap reference values abhi enter kar sakte hain ya skip karke baad me Data Editor me daal sakte hain.</p>
+              <form onSubmit={(e) => { e.preventDefault(); saveAndDownloadFiles(referenceData); }} className="space-y-4 text-left max-h-[70vh] overflow-y-auto px-1">
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">
-                      Systolic BP
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 120"
-                      value={referenceData.sys}
-                      onChange={(e) =>
-                        setReferenceData({
-                          ...referenceData,
-                          sys: e.target.value,
-                        })
-                      }
-                      className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">
-                      Diastolic BP
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 80"
-                      value={referenceData.dia}
-                      onChange={(e) =>
-                        setReferenceData({
-                          ...referenceData,
-                          dia: e.target.value,
-                        })
-                      }
-                      className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none"
-                    />
-                  </div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Systolic BP</label><input type="text" placeholder="e.g. 120" value={referenceData.sys} onChange={(e) => setReferenceData({ ...referenceData, sys: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Diastolic BP</label><input type="text" placeholder="e.g. 80" value={referenceData.dia} onChange={(e) => setReferenceData({ ...referenceData, dia: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">
-                    Pulse Rate
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 72"
-                    value={referenceData.pulse}
-                    onChange={(e) =>
-                      setReferenceData({
-                        ...referenceData,
-                        pulse: e.target.value,
-                      })
-                    }
-                    className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none"
-                  />
-                </div>
+                <div><label className="block text-sm font-bold text-gray-700 mb-1">Pulse Rate</label><input type="text" placeholder="e.g. 72" value={referenceData.pulse} onChange={(e) => setReferenceData({ ...referenceData, pulse: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
                 <div className="flex gap-3 pt-6 sticky bottom-0 bg-white z-10">
-                  <button
-                    type="button"
-                    disabled={uploading}
-                    onClick={() =>
-                      saveAndDownloadFiles({ sys: "", dia: "", pulse: "" })
-                    }
-                    className="flex-1 py-3 px-4 border-2 border-gray-300 rounded-lg font-bold hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Skip & Save
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={uploading}
-                    className="flex-1 py-3 px-4 bg-[#05205A] text-white rounded-lg font-bold hover:opacity-90 flex items-center justify-center disabled:opacity-50"
-                  >
-                    {uploading ? "Saving..." : "Save Data"}
-                  </button>
+                  <button type="button" disabled={uploading} onClick={() => saveAndDownloadFiles({ sys: "", dia: "", pulse: "" })} className="flex-1 py-3 px-4 border-2 border-gray-300 rounded-lg font-bold hover:bg-gray-50 disabled:opacity-50">Skip & Save</button>
+                  <button type="submit" disabled={uploading} className="flex-1 py-3 px-4 bg-[#05205A] text-white rounded-lg font-bold hover:opacity-90 flex items-center justify-center disabled:opacity-50">{uploading ? "Saving..." : "Save Data"}</button>
                 </div>
               </form>
             </div>
