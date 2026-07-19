@@ -9,9 +9,6 @@ const uploadToCloudinary = async (file) => {
 };
 
 export default function CGHMHealthDashboard() {
-  // --- STATE MANAGEMENT ---
-  const [activeTab, setActiveTab] = useState("record"); // 'record' or 'edit'
-
   // UI States
   const [status, setStatus] = useState({
     text: 'Naya record banane ke liye "Camera Start Karein" par click karein',
@@ -37,20 +34,12 @@ export default function CGHMHealthDashboard() {
     height: "",
   });
   
-  // Added "sugar" to reference data
   const [referenceData, setReferenceData] = useState({
     sys: "",
     dia: "",
     pulse: "",
     sugar: "", 
   });
-
-  // --- NEW SMART EDITOR STATES (PDF + EXCEL) ---
-  const [pdfFileUrl, setPdfFileUrl] = useState(null);
-  const [excelData, setExcelData] = useState([]); 
-  const [loadedFileName, setLoadedFileName] = useState("");
-  const [activeCell, setActiveCell] = useState({ rowIndex: null, colIndex: null });
-  const [dragHoverCell, setDragHoverCell] = useState({ rowIndex: null, colIndex: null });
 
   // --- REFS FOR INTERNAL LOGIC ---
   const videoRef = useRef(null);
@@ -80,16 +69,8 @@ export default function CGHMHealthDashboard() {
   // Hardcoded for preview compatibility
   const API_BASE = "http://localhost:3001/api";
 
-  // Dynamically load SheetJS to avoid module resolution errors in preview
+  // Cleanup on unmount
   useEffect(() => {
-    if (!window.XLSX) {
-      const script = document.createElement("script");
-      script.src = "https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js";
-      script.async = true;
-      document.body.appendChild(script);
-    }
-    
-    // Cleanup on unmount
     return () => {
       stopCamera();
       if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
@@ -470,7 +451,7 @@ export default function CGHMHealthDashboard() {
     // Completely reset the UI
     stopCamera();
 
-    // --- Cloud Upload (As required, strictly kept intact) ---
+    // --- Cloud Upload ---
     if (currentVideoBlobRef.current) {
       setUploading(true);
       try {
@@ -503,265 +484,66 @@ export default function CGHMHealthDashboard() {
     }
   };
 
-  // ==========================================
-  // --- NEW LOGIC: SMART EDITOR (TAB 2) ---
-  // ==========================================
-  const handlePdfUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) setPdfFileUrl(URL.createObjectURL(file));
-  };
-
-  const handleExcelUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setLoadedFileName("CGHM_" + file.name);
-
-    if (!window.XLSX) {
-      toast.error("Excel library load ho rahi hai, kripya 2 second ruk kar wapas upload karein.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const wb = window.XLSX.read(evt.target.result, { type: 'binary' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const data = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-        setExcelData(data);
-      } catch (error) {
-        console.error("Error loading Excel:", error);
-        toast.error("File load karne mein error. Kripya valid Excel/CSV select karein.");
-      }
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  const updateCellData = (rowIndex, colIndex, value) => {
-    setExcelData((prev) => {
-      const newData = [...prev];
-      const actualRowIndex = rowIndex + 1;
-      if (!newData[actualRowIndex]) newData[actualRowIndex] = [];
-      newData[actualRowIndex][colIndex] = value;
-      return newData;
-    });
-  };
-
-  const autoAdvance = (currentRowIndex, colIndex) => {
-    const nextRowIndex = currentRowIndex + 1;
-    if (nextRowIndex < excelData.length - 1) {
-      setActiveCell({ rowIndex: nextRowIndex, colIndex });
-      setTimeout(() => {
-        const nextCell = document.getElementById(`cell-${nextRowIndex}-${colIndex}`);
-        if (nextCell) {
-          nextCell.focus();
-          nextCell.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-      }, 10);
-    }
-  };
-
-  const handleManualEdit = (rowIndex, colIndex, text) => {
-    updateCellData(rowIndex, colIndex, text.trim());
-  };
-
-  const handlePaste = (e, rowIndex, colIndex) => {
-    e.preventDefault();
-    const pastedText = (e.clipboardData || window.clipboardData).getData('text');
-    if (pastedText) {
-      updateCellData(rowIndex, colIndex, pastedText.trim());
-      e.target.innerText = pastedText.trim();
-      autoAdvance(rowIndex, colIndex);
-    }
-  };
-
-  const handleDrop = (e, rowIndex, colIndex) => {
-    e.preventDefault();
-    setDragHoverCell({ rowIndex: null, colIndex: null });
-    const droppedText = e.dataTransfer.getData('text');
-    if (droppedText) {
-      updateCellData(rowIndex, colIndex, droppedText.trim());
-      setActiveCell({ rowIndex, colIndex });
-      e.target.innerText = droppedText.trim();
-      autoAdvance(rowIndex, colIndex);
-    }
-  };
-
-  const downloadExcel = () => {
-    try {
-      if (!window.XLSX) return;
-      const worksheet = window.XLSX.utils.aoa_to_sheet(excelData);
-      const workbook = window.XLSX.utils.book_new();
-      window.XLSX.book_append_sheet(workbook, worksheet, "CGHM_Data");
-      window.XLSX.writeFile(workbook, loadedFileName || "updated_data.xlsx");
-      toast.success("Excel File successfully update aur download ho gayi hai!");
-    } catch (error) {
-      console.error("Export failed:", error);
-      toast.error("File download me problem aayi.");
-    }
-  };
-
   return (
-    <div className="bg-gray-50 min-h-screen flex flex-col items-center font-sans relative pb-10">
+    <div className="bg-gray-50 min-h-screen flex flex-col items-center font-sans relative pb-10 pt-8">
       <Toaster position="top-center" reverseOrder={false} />
 
-      {/* Tabs Layout */}
-      <div className={`w-full shadow-md mb-8 flex justify-center border-b-4 border-[#12863B] sticky top-0 z-40 bg-white`}>
-        <div className="flex max-w-2xl w-full">
-          <button onClick={() => setActiveTab("record")} className={`flex-1 py-4 font-bold text-lg transition-colors ${activeTab === "record" ? "text-white bg-[#05205A]" : "text-gray-500 bg-gray-200 hover:bg-gray-300"}`}>
-            🎥 Recording Dashboard
-          </button>
-          <button onClick={() => setActiveTab("edit")} className={`flex-1 py-4 font-bold text-lg transition-colors ${activeTab === "edit" ? "text-white bg-[#05205A]" : "text-gray-500 bg-gray-200 hover:bg-gray-300"}`}>
-            📝 Data Editor
-          </button>
+      <div className="bg-white p-8 rounded-2xl shadow-xl w-11/12 max-w-2xl flex flex-col items-center relative">
+        <div className={`w-full py-6 px-4 rounded-xl text-center text-xl font-bold text-white shadow-inner mb-6 ${status.color} transition-colors duration-300`}>
+          {status.text}
+        </div>
+
+        <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden shadow-inner flex justify-center items-center mb-6 border-4 border-gray-100">
+          {cameraOff && <span className="text-gray-400 font-medium text-lg">Camera off hai</span>}
+          <video ref={videoRef} className={`w-full h-full object-cover ${cameraOff ? "hidden" : ""}`} playsInline muted autoPlay />
+          
+          {uiAppState === "RECORDING" && (
+            <div className="absolute bottom-4 right-4 bg-black/70 text-white px-4 py-2 rounded-full font-mono text-xl flex items-center gap-2 shadow-lg border border-red-500/50 z-10">
+              <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
+              <span>{formatTime(recordingTime)}</span>
+            </div>
+          )}
+          <canvas ref={canvasRef} width="64" height="64" className="hidden" />
+        </div>
+
+        {hasFlash && (
+          <div className="flex gap-2 w-full mt-2 mb-4 border-t pt-4 border-gray-100">
+            <button onClick={() => toggleFlash(true)} className={`flex-1 py-3 px-4 rounded-lg font-bold text-white shadow bg-[#12863B] transition-opacity ${isFlashOn ? "opacity-50 cursor-default" : "hover:opacity-90"}`}>
+              Flash ON
+            </button>
+            <button onClick={() => toggleFlash(false)} className={`flex-1 py-3 px-4 rounded-lg font-bold text-white shadow bg-[#CC161C] transition-opacity ${!isFlashOn ? "opacity-50 cursor-default" : "hover:opacity-90"}`}>
+              Flash OFF
+            </button>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-4 w-full">
+          {uiAppState === "IDLE" && (
+            <button onClick={() => { setSubjectData({ id: "", name: "", age: "", gender: "", mobile: "", height: "" }); setShowSubjectModal(true); }} className="flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#05205A] hover:opacity-90">
+              Camera Start Karein
+            </button>
+          )}
+
+          {uiAppState === "WAITING_START" && (
+            <button onClick={startRecordingLogic} className="flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#12863B] animate-bounce hover:opacity-90">
+              ▶ Start Recording
+            </button>
+          )}
+
+          {uiAppState === "RECORDING" && (
+            <button onClick={stopRecordingSuccess} className="flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#05205A] hover:bg-[#041642] transition-colors">
+              ⏹ Stop Recording (Save)
+            </button>
+          )}
+
+          {(uiAppState !== "IDLE" && uiAppState !== "MODAL_OPEN") && (
+            <button onClick={stopCamera} disabled={uploading} className={`py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#CC161C] transition-opacity ${uploading ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"}`}>
+              Cancel
+            </button>
+          )}
         </div>
       </div>
 
-      {/* TAB 1: RECORDING DASHBOARD */}
-      {activeTab === "record" && (
-        <div className="bg-white p-8 rounded-2xl shadow-xl w-11/12 max-w-2xl flex flex-col items-center relative">
-          <div className={`w-full py-6 px-4 rounded-xl text-center text-xl font-bold text-white shadow-inner mb-6 ${status.color} transition-colors duration-300`}>
-            {status.text}
-          </div>
-
-          <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden shadow-inner flex justify-center items-center mb-6 border-4 border-gray-100">
-            {cameraOff && <span className="text-gray-400 font-medium text-lg">Camera off hai</span>}
-            <video ref={videoRef} className={`w-full h-full object-cover ${cameraOff ? "hidden" : ""}`} playsInline muted autoPlay />
-            
-            {uiAppState === "RECORDING" && (
-              <div className="absolute bottom-4 right-4 bg-black/70 text-white px-4 py-2 rounded-full font-mono text-xl flex items-center gap-2 shadow-lg border border-red-500/50 z-10">
-                <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
-                <span>{formatTime(recordingTime)}</span>
-              </div>
-            )}
-            <canvas ref={canvasRef} width="64" height="64" className="hidden" />
-          </div>
-
-          {hasFlash && (
-            <div className="flex gap-2 w-full mt-2 mb-4 border-t pt-4 border-gray-100">
-              <button onClick={() => toggleFlash(true)} className={`flex-1 py-3 px-4 rounded-lg font-bold text-white shadow bg-[#12863B] transition-opacity ${isFlashOn ? "opacity-50 cursor-default" : "hover:opacity-90"}`}>
-                Flash ON
-              </button>
-              <button onClick={() => toggleFlash(false)} className={`flex-1 py-3 px-4 rounded-lg font-bold text-white shadow bg-[#CC161C] transition-opacity ${!isFlashOn ? "opacity-50 cursor-default" : "hover:opacity-90"}`}>
-                Flash OFF
-              </button>
-            </div>
-          )}
-
-          <div className="flex flex-wrap gap-4 w-full">
-            {uiAppState === "IDLE" && (
-              <button onClick={() => { setSubjectData({ id: "", name: "", age: "", gender: "", mobile: "", height: "" }); setShowSubjectModal(true); }} className="flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#05205A] hover:opacity-90">
-                Camera Start Karein
-              </button>
-            )}
-
-            {uiAppState === "WAITING_START" && (
-              <button onClick={startRecordingLogic} className="flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#12863B] animate-bounce hover:opacity-90">
-                ▶ Start Recording
-              </button>
-            )}
-
-            {uiAppState === "RECORDING" && (
-              <button onClick={stopRecordingSuccess} className="flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#05205A] hover:bg-[#041642] transition-colors">
-                ⏹ Stop Recording (Save)
-              </button>
-            )}
-
-            {(uiAppState !== "IDLE" && uiAppState !== "MODAL_OPEN") && (
-              <button onClick={stopCamera} disabled={uploading} className={`py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#CC161C] transition-opacity ${uploading ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"}`}>
-                Cancel
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: SMART DATA EDITOR (PDF + EXCEL) */}
-      {activeTab === "edit" && (
-        <div className="bg-white p-6 rounded-2xl shadow-xl w-11/12 max-w-[98%] xl:max-w-[90vw] flex flex-col lg:flex-row gap-6 mb-10 h-[80vh] min-h-[600px]">
-          
-          <div className="flex-1 flex flex-col border-2 border-gray-200 rounded-xl overflow-hidden relative bg-gray-50 h-full">
-            <div className="bg-[#eef2f6] p-4 border-l-4 border-[#05205A] flex items-center justify-between z-10 shadow-sm">
-              <h3 className="text-[#05205A] font-bold flex items-center gap-2 text-lg">📄 1. PDF Viewer</h3>
-              <input type="file" accept=".pdf" onChange={handlePdfUpload} className="text-sm cursor-pointer file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#05205A] file:text-white hover:file:bg-[#0a2f7c]" />
-            </div>
-            <div className="flex-1 relative w-full h-full bg-white">
-               {!pdfFileUrl && <div className="absolute inset-0 flex items-center justify-center text-gray-400 italic">PDF file select karein...</div>}
-               {pdfFileUrl && <iframe src={pdfFileUrl} className="w-full h-full border-none" title="PDF Viewer" />}
-            </div>
-          </div>
-
-          <div className="flex-1 flex flex-col border-2 border-gray-200 rounded-xl overflow-hidden relative bg-gray-50 h-full">
-            <div className="bg-[#eef2f6] p-4 border-l-4 border-[#12863B] flex flex-col sm:flex-row sm:items-center justify-between z-10 gap-3 shadow-sm">
-              <div>
-                <h3 className="text-[#05205A] font-bold flex items-center gap-2 text-lg">📊 2. Excel Editor</h3>
-                <span className="text-xs text-[#CC161C] font-semibold mt-1 block">⚡ Trick: Select in PDF &gt; Ctrl+C &gt; Click Cell &gt; Ctrl+V</span>
-              </div>
-              <div className="flex flex-col sm:flex-row items-center gap-3">
-                  <input type="file" accept=".xlsx, .xls, .csv" onChange={handleExcelUpload} className="text-sm cursor-pointer w-full sm:w-48 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#12863B] file:text-white hover:file:bg-[#0f7332]" />
-                  {excelData.length > 0 && (
-                      <button onClick={downloadExcel} className="bg-[#12863B] text-white px-4 py-2 rounded-full font-bold text-sm hover:bg-[#0f7332] transition shadow whitespace-nowrap">
-                          💾 Save Data
-                      </button>
-                  )}
-              </div>
-            </div>
-            
-            <div className="flex-1 overflow-auto bg-white relative p-0 m-0">
-               {excelData.length === 0 && <div className="absolute inset-0 flex items-center justify-center text-gray-400 italic">Excel ya CSV file select karein...</div>}
-               
-               {excelData.length > 0 && (
-                   <table className="w-full border-collapse text-left">
-                      <thead>
-                          <tr>
-                              {excelData[0].map((header, i) => (
-                                  <th key={i} className="border border-gray-300 p-3 bg-[#05205A] text-white whitespace-nowrap sticky top-0 z-10 font-semibold text-sm tracking-wide">
-                                      {header}
-                                  </th>
-                              ))}
-                          </tr>
-                      </thead>
-                      <tbody>
-                          {excelData.slice(1).map((row, rowIndex) => (
-                              <tr key={rowIndex} className="hover:bg-gray-50 transition-colors">
-                                  {excelData[0].map((_, colIndex) => {
-                                      const cellValue = row[colIndex] || "";
-                                      const isActive = activeCell.rowIndex === rowIndex && activeCell.colIndex === colIndex;
-                                      const isDragHover = dragHoverCell.rowIndex === rowIndex && dragHoverCell.colIndex === colIndex;
-                                      
-                                      let cellClasses = "border border-gray-300 p-3 whitespace-nowrap outline-none transition-all duration-200 text-sm ";
-                                      if (isActive) cellClasses += "bg-[#e8f5e9] outline-[3px] outline-[#12863B] outline text-black font-semibold z-10 relative ";
-                                      else if (isDragHover) cellClasses += "bg-[#bbf7d0] border-2 border-dashed border-[#12863B] shadow-inner ";
-                                      else cellClasses += "focus:bg-[#f0f4fa] focus:outline focus:outline-2 focus:outline-[#05205A] ";
-
-                                      return (
-                                          <td 
-                                              key={colIndex}
-                                              id={`cell-${rowIndex}-${colIndex}`}
-                                              className={cellClasses}
-                                              contentEditable={true}
-                                              suppressContentEditableWarning={true}
-                                              onClick={() => setActiveCell({ rowIndex, colIndex })}
-                                              onBlur={(e) => handleManualEdit(rowIndex, colIndex, e.target.innerText)}
-                                              onPaste={(e) => handlePaste(e, rowIndex, colIndex)}
-                                              onDragOver={(e) => { e.preventDefault(); setDragHoverCell({ rowIndex, colIndex }); }}
-                                              onDragLeave={() => setDragHoverCell({ rowIndex: null, colIndex: null })}
-                                              onDrop={(e) => handleDrop(e, rowIndex, colIndex)}
-                                          >
-                                              {cellValue}
-                                          </td>
-                                      )
-                                  })}
-                              </tr>
-                          ))}
-                      </tbody>
-                   </table>
-               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODALS */}
       {showSubjectModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
