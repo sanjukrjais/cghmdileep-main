@@ -616,18 +616,6 @@ export default function CGHMHealthDashboard() {
         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl shadow-md w-11/12 max-w-2xl text-center border-t-8 border-[#12863B] mb-8">
-        <div className="flex justify-center items-center gap-2 mb-2">
-          <h1 className="text-5xl font-extrabold tracking-tight text-[#12863B]">C</h1>
-          <h1 className="text-5xl font-extrabold tracking-tight text-[#05205A]">G</h1>
-          <h1 className="text-5xl font-extrabold tracking-tight text-[#CC161C]">H</h1>
-          <h1 className="text-5xl font-extrabold tracking-tight text-[#05205A]">M</h1>
-        </div>
-        <p className="text-lg font-bold uppercase tracking-wider text-[#05205A]">
-          - Monitor Health Smartly -
-        </p>
-      </div>
-
       {/* TAB 1: RECORDING DASHBOARD */}
       {activeTab === "record" && (
         <div className="bg-white p-8 rounded-2xl shadow-xl w-11/12 max-w-2xl flex flex-col items-center relative">
