@@ -1,6 +1,11 @@
+
+
+
+
+
+
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import toast, { Toaster } from "react-hot-toast";
-// Import real Cloudinary utility for production
 import { uploadToCloudinary } from "../utils/cloudinary";
 
 export default function CGHMHealthDashboard() {
@@ -57,9 +62,10 @@ export default function CGHMHealthDashboard() {
 
   // Audio Context Ref for Beeps
   const audioCtxRef = useRef(null);
+
+  // Wake Lock Ref
   const wakeLockRef = useRef(null);
 
-  // Production Backend URL from Environment Variables
   const API_BASE = import.meta.env.VITE_BACKEND_URL;
 
   // Cleanup on unmount
@@ -92,6 +98,7 @@ export default function CGHMHealthDashboard() {
     try {
       if ("wakeLock" in navigator) {
         wakeLockRef.current = await navigator.wakeLock.request("screen");
+        console.log("Screen Wake Lock is active");
       }
     } catch (err) {
       console.error(`Wake Lock error:`, err);
@@ -122,7 +129,7 @@ export default function CGHMHealthDashboard() {
       gainNode.connect(audioCtxRef.current.destination);
 
       oscillator.start();
-      oscillator.stop(audioCtxRef.current.currentTime + 0.25);
+      oscillator.stop(audioCtxRef.current.currentTime + 0.25); // 250ms beep
     } catch (e) {
       console.error("Audio beep failed:", e);
     }
@@ -130,6 +137,7 @@ export default function CGHMHealthDashboard() {
 
   // --- LOGIC: CAMERA & FLASH ---
   const initCamera = async () => {
+    // Initialize audio context on user interaction (form submit)
     if (!audioCtxRef.current) {
       audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
     }
@@ -146,11 +154,8 @@ export default function CGHMHealthDashboard() {
 
         await requestWakeLock();
 
-        // Safe capabilities check
-        const capabilities = videoTrackRef.current.getCapabilities ? videoTrackRef.current.getCapabilities() : {};
-        
-        // Render flash buttons by default; hardware block handled in toggleFlash
-        setHasFlash(true);
+        const capabilities = videoTrackRef.current.getCapabilities();
+        setHasFlash(!!capabilities.torch);
 
         setCameraOff(false);
         updateAppState("CAMERA_ACTIVE");
@@ -197,21 +202,12 @@ export default function CGHMHealthDashboard() {
   }, [isFlashOn, updateAppState]);
 
   const toggleFlash = async (turnOn) => {
-    if (!videoTrackRef.current) return;
-    
-    try {
-      await videoTrackRef.current.applyConstraints({ advanced: [{ torch: turnOn }] });
-      setIsFlashOn(turnOn);
-    } catch (e) {
-      console.error(`Flash Error:`, e);
-      if (e.name === 'OverconstrainedError' || e.name === 'NotAllowedError') {
-        // Hide flashlight options if device physically rejects the constraint (e.g. Samsung devices)
-        toast.error(`Flashlight Device dwara block ki gayi hai (${e.name}).`);
-        setIsFlashOn(false);
-        setHasFlash(false); 
-      } else {
-        toast.error(`Flash error: ${e.message}`);
-        setIsFlashOn(false);
+    if (videoTrackRef.current && videoTrackRef.current.getCapabilities().torch) {
+      try {
+        await videoTrackRef.current.applyConstraints({ advanced: [{ torch: turnOn }] });
+        setIsFlashOn(turnOn);
+      } catch (e) {
+        console.error(`Flash Error:`, e);
       }
     }
   };
@@ -254,6 +250,7 @@ export default function CGHMHealthDashboard() {
     }
   };
 
+  // Manual STOP triggered by User
   const stopRecordingSuccess = () => {
     stopReasonRef.current = "SUCCESS";
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
@@ -286,7 +283,9 @@ export default function CGHMHealthDashboard() {
     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
     const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 
-    let rSum = 0, gSum = 0, bSum = 0;
+    let rSum = 0,
+      gSum = 0,
+      bSum = 0;
     for (let i = 0; i < pixels.length; i += 4) {
       rSum += pixels[i];
       gSum += pixels[i + 1];
@@ -313,8 +312,9 @@ export default function CGHMHealthDashboard() {
     }
     prevFrameDataRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
+    // STATE MACHINE LOGIC
     if (currentState === "COOLDOWN") {
-      // Waiting phase
+      // Waiting phase, do nothing frame-wise
     } else if (currentState === "CAMERA_ACTIVE") {
       if (isFingerDetected && !isMotionDetected) {
         updateAppState("WAITING_START");
@@ -329,10 +329,12 @@ export default function CGHMHealthDashboard() {
       }
     } else if (currentState === "RECORDING") {
       if (!isFingerDetected || isMotionDetected) {
+        // Start Warning Timer
         if (warningStartTimeRef.current === 0) {
           warningStartTimeRef.current = Date.now();
         }
 
+        // Play Beep every 1 second
         if (Date.now() - lastBeepTimeRef.current > 1000) {
           playWarningBeep();
           lastBeepTimeRef.current = Date.now();
@@ -340,6 +342,7 @@ export default function CGHMHealthDashboard() {
 
         updateStatus("Steady your finger! Warning...", "bg-orange-500");
 
+        // Ignore warning for 5s logic -> DISMISS
         if (Date.now() - warningStartTimeRef.current > 5000) {
           stopReasonRef.current = "DISMISSED";
           if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
@@ -351,11 +354,13 @@ export default function CGHMHealthDashboard() {
           updateAppState("COOLDOWN");
           updateStatus("Recording Dismissed due to movement.", "bg-[#CC161C]");
 
+          // Completely stop camera and reset after 3 seconds showing error
           setTimeout(() => {
             stopCamera();
           }, 3000);
         }
       } else {
+        // Finger is steady again - clear warnings
         if (warningStartTimeRef.current !== 0) {
           warningStartTimeRef.current = 0;
           updateStatus("Recording in progress...", "bg-[#12863B]");
@@ -389,27 +394,44 @@ export default function CGHMHealthDashboard() {
     const safeName = subjectData.name.replace(/[^a-zA-Z0-9]/g, "_");
     const fileNameBase = `${timestamp}_${safeName}`;
 
+    // Added Sugar Level to headers and data
     const headers = [
-      "Timestamp", "ID", "Name", "Age", "Gender", "Mobile", "Height(cm)",
-      "Systolic BP", "Diastolic BP", "Pulse Rate", "Sugar Level"
+      "Timestamp",
+      "ID",
+      "Name",
+      "Age",
+      "Gender",
+      "Mobile",
+      "Height(cm)",
+      "Systolic BP",
+      "Diastolic BP",
+      "Pulse Rate",
+      "Sugar Level",
     ];
-    
     const rowData = [
       new Date().toLocaleString().replace(/,/g, ""),
-      subjectData.id, subjectData.name, subjectData.age, subjectData.gender,
-      subjectData.mobile || "N/A", subjectData.height || "N/A",
-      finalRefData.sys || "N/A", finalRefData.dia || "N/A",
-      finalRefData.pulse || "N/A", finalRefData.sugar || "N/A",
+      subjectData.id,
+      subjectData.name,
+      subjectData.age,
+      subjectData.gender,
+      subjectData.mobile || "N/A",
+      subjectData.height || "N/A",
+      finalRefData.sys || "N/A",
+      finalRefData.dia || "N/A",
+      finalRefData.pulse || "N/A",
+      finalRefData.sugar || "N/A",
     ];
 
     const csvContent = headers.join(",") + "\n" + rowData.join(",");
     const csvBlob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     let ext = "webm";
 
+    // --- ASK FOR LOCATION (File System Access API) ---
     if (window.showSaveFilePicker && currentVideoBlobRef.current) {
       try {
         ext = currentVideoBlobRef.current.extension || "webm";
 
+        // 1. Save Video
         toast("Select folder to save Video...", { icon: "📁" });
         const videoHandle = await window.showSaveFilePicker({
           suggestedName: `${fileNameBase}.${ext}`,
@@ -419,6 +441,7 @@ export default function CGHMHealthDashboard() {
         await videoWritable.write(currentVideoBlobRef.current);
         await videoWritable.close();
 
+        // 2. Save CSV
         toast("Select folder to save Excel/CSV...", { icon: "📁" });
         const csvHandle = await window.showSaveFilePicker({
           suggestedName: `${fileNameBase}.csv`,
@@ -440,6 +463,7 @@ export default function CGHMHealthDashboard() {
         }
       }
     } else {
+      // Fallback for browsers without File System Access API
       toast.success("Downloading files...");
       fallbackSave(csvBlob, `${fileNameBase}.csv`);
       if (currentVideoBlobRef.current) {
@@ -448,15 +472,15 @@ export default function CGHMHealthDashboard() {
       }
     }
 
+    // Completely reset the UI
     stopCamera();
 
-    // --- Production Cloud Upload & Backend Sync ---
+    // --- Cloud Upload (real Cloudinary + backend save) ---
     if (currentVideoBlobRef.current) {
       setUploading(true);
       try {
         toast.loading("🎥 Cloudinary par video upload ho raha hai...", { id: "upload" });
 
-        // Using the real uploadToCloudinary utility function
         const uploadedVideoUrl = await uploadToCloudinary(currentVideoBlobRef.current);
         const sellerId = localStorage.getItem("sellerId") || "guest";
 
@@ -466,7 +490,6 @@ export default function CGHMHealthDashboard() {
         formData.append("duration", recordingTime.toString());
         formData.append("subjectName", subjectData.name);
 
-        // Submitting directly to Production API
         const response = await fetch(`${API_BASE}/videos`, {
           method: "POST",
           body: formData,
@@ -479,7 +502,7 @@ export default function CGHMHealthDashboard() {
         toast.success("✅ Video successfully server par save ho gaya!", { id: "upload" });
       } catch (error) {
         console.error("Upload error:", error);
-        toast.error("Cloud upload fail, lekin local files save ho chuki hain.", {
+        toast.error("Cloud upload fail, lekin local files check karein.", {
           id: "upload",
           duration: 5000,
         });
