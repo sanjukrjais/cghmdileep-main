@@ -19,7 +19,7 @@ const SignUp = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        navigate("/Monitoring");
+        navigate("/");
       }
     });
     return () => unsubscribe();

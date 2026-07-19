@@ -172,7 +172,7 @@ const ConsentForm = () => {
 
           // 🔥 3. Force ProtectedRoute re-check with small delay
           setTimeout(() => {
-            window.location.href = "/Monitoring"; // Hard refresh = Guaranteed state update
+            window.location.href = "/"; // Hard refresh = Guaranteed state update
           }, 500);
         } catch (error) {
           console.error(error);
