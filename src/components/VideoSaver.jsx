@@ -36,15 +36,18 @@ export default function CGHMHealthDashboard() {
     mobile: "",
     height: "",
   });
+  
+  // Added "sugar" to reference data
   const [referenceData, setReferenceData] = useState({
     sys: "",
     dia: "",
     pulse: "",
+    sugar: "", 
   });
 
   // --- NEW SMART EDITOR STATES (PDF + EXCEL) ---
   const [pdfFileUrl, setPdfFileUrl] = useState(null);
-  const [excelData, setExcelData] = useState([]); // 2D array for rows and columns
+  const [excelData, setExcelData] = useState([]); 
   const [loadedFileName, setLoadedFileName] = useState("");
   const [activeCell, setActiveCell] = useState({ rowIndex: null, colIndex: null });
   const [dragHoverCell, setDragHoverCell] = useState({ rowIndex: null, colIndex: null });
@@ -60,10 +63,17 @@ export default function CGHMHealthDashboard() {
   const timerRef = useRef(null);
   const animationFrameIdRef = useRef(null);
   const prevFrameDataRef = useRef(null);
-  const motionStartTimeRef = useRef(0);
+  
+  // Ref for Warning system
+  const warningStartTimeRef = useRef(0);
+  const lastBeepTimeRef = useRef(0);
+  
   const videoTrackRef = useRef(null);
   const stopReasonRef = useRef("NONE");
   
+  // Audio Context Ref for Beeps
+  const audioCtxRef = useRef(null);
+
   // Wake Lock Ref
   const wakeLockRef = useRef(null);
 
@@ -78,6 +88,14 @@ export default function CGHMHealthDashboard() {
       script.async = true;
       document.body.appendChild(script);
     }
+    
+    // Cleanup on unmount
+    return () => {
+      stopCamera();
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close();
+      }
+    };
   }, []);
 
   const updateAppState = useCallback((newState) => {
@@ -100,10 +118,10 @@ export default function CGHMHealthDashboard() {
     try {
       if ('wakeLock' in navigator) {
         wakeLockRef.current = await navigator.wakeLock.request('screen');
-        console.log('Screen Wake Lock is active - Screen will not sleep');
+        console.log('Screen Wake Lock is active');
       }
     } catch (err) {
-      console.error(`Wake Lock error: ${err.name}, ${err.message}`);
+      console.error(`Wake Lock error:`, err);
     }
   };
 
@@ -115,8 +133,35 @@ export default function CGHMHealthDashboard() {
     }
   };
 
+  // --- AUDIO BEEP LOGIC ---
+  const playWarningBeep = () => {
+    if (!audioCtxRef.current) return;
+    if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+    
+    try {
+      const oscillator = audioCtxRef.current.createOscillator();
+      const gainNode = audioCtxRef.current.createGain();
+      oscillator.type = "square";
+      oscillator.frequency.setValueAtTime(800, audioCtxRef.current.currentTime);
+      gainNode.gain.setValueAtTime(0.1, audioCtxRef.current.currentTime);
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtxRef.current.destination);
+      
+      oscillator.start();
+      oscillator.stop(audioCtxRef.current.currentTime + 0.25); // 250ms beep
+    } catch (e) {
+      console.error("Audio beep failed:", e);
+    }
+  };
+
   // --- LOGIC: CAMERA & FLASH ---
   const initCamera = async () => {
+    // Initialize audio context on user interaction (form submit)
+    if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment", width: 320, height: 240 },
@@ -127,46 +172,41 @@ export default function CGHMHealthDashboard() {
         videoRef.current.srcObject = stream;
         videoTrackRef.current = stream.getVideoTracks()[0];
         
-        await requestWakeLock(); // Prevent screen sleep on mobile
+        await requestWakeLock();
 
         const capabilities = videoTrackRef.current.getCapabilities();
-        if (capabilities.torch) {
-          setHasFlash(true);
-        } else {
-          setHasFlash(false);
-        }
+        setHasFlash(!!capabilities.torch);
 
         setCameraOff(false);
         updateAppState("CAMERA_ACTIVE");
         updateStatus("No finger, please place finger", "bg-[#05205A]");
-        motionStartTimeRef.current = 0;
+        warningStartTimeRef.current = 0;
+        lastBeepTimeRef.current = 0;
 
         processVideoFrame();
       }
     } catch (err) {
       console.error("Camera error:", err);
       updateStatus("Camera access deny ho gaya hai.", "bg-[#CC161C]");
-      toast.error("Please allow camera permissions. Agar iOS hai toh Safari settings check karein.");
+      toast.error("Please allow camera permissions.");
     }
   };
 
   const stopCamera = useCallback(() => {
     if (isFlashOn) toggleFlash(false);
-    
-    releaseWakeLock(); // Release screen lock when camera stops
+    releaseWakeLock();
 
     if (videoRef.current && videoRef.current.srcObject) {
       videoRef.current.srcObject.getTracks().forEach((t) => t.stop());
       videoRef.current.srcObject = null;
     }
 
-    if (animationFrameIdRef.current)
-      cancelAnimationFrame(animationFrameIdRef.current);
+    if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
+    if (timerRef.current) clearInterval(timerRef.current);
 
-    if (appStateRef.current === "RECORDING" && mediaRecorderRef.current) {
+    if ((appStateRef.current === "RECORDING" || appStateRef.current === "RECORDING_WARNING") && mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
       stopReasonRef.current = "CANCEL";
       mediaRecorderRef.current.stop();
-      if (timerRef.current) clearInterval(timerRef.current);
     }
 
     updateAppState("IDLE");
@@ -174,21 +214,16 @@ export default function CGHMHealthDashboard() {
     setHasFlash(false);
     videoTrackRef.current = null;
     setRecordingTime(0);
-    updateStatus(
-      "Naya record banane ke liye 'Camera Start Karein' par click karein",
-      "bg-[#05205A]",
-    );
+    updateStatus('Naya record banane ke liye "Camera Start Karein" par click karein', "bg-[#05205A]");
   }, [isFlashOn, updateAppState]);
 
   const toggleFlash = async (turnOn) => {
     if (videoTrackRef.current && videoTrackRef.current.getCapabilities().torch) {
       try {
-        await videoTrackRef.current.applyConstraints({
-          advanced: [{ torch: turnOn }],
-        });
+        await videoTrackRef.current.applyConstraints({ advanced: [{ torch: turnOn }] });
         setIsFlashOn(turnOn);
       } catch (e) {
-        console.error(`Failed to turn flash ${turnOn ? "ON" : "OFF"}:`, e);
+        console.error(`Flash Error:`, e);
       }
     }
   };
@@ -221,6 +256,7 @@ export default function CGHMHealthDashboard() {
       mediaRecorder.start();
       updateAppState("RECORDING");
       setRecordingTime(0);
+      warningStartTimeRef.current = 0;
 
       timerRef.current = setInterval(() => {
         setRecordingTime((prev) => prev + 1);
@@ -228,6 +264,24 @@ export default function CGHMHealthDashboard() {
     } catch (e) {
       console.error("MediaRecorder Error:", e);
     }
+  };
+
+  // Manual STOP triggered by User
+  const stopRecordingSuccess = () => {
+      stopReasonRef.current = "SUCCESS";
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+          mediaRecorderRef.current.stop();
+      }
+      if (timerRef.current) clearInterval(timerRef.current);
+      warningStartTimeRef.current = 0;
+
+      updateAppState("COOLDOWN");
+      updateStatus("Recording done successfully ✓", "bg-[#12863B]");
+
+      setTimeout(() => {
+          updateAppState("MODAL_OPEN");
+          setShowReferenceModal(true);
+      }, 1500);
   };
 
   const processVideoFrame = useCallback(() => {
@@ -242,7 +296,6 @@ export default function CGHMHealthDashboard() {
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
     const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 
@@ -264,65 +317,89 @@ export default function CGHMHealthDashboard() {
       let diffSum = 0;
       const prevPixels = prevFrameDataRef.current.data;
       for (let i = 0; i < pixels.length; i += 4) {
-        diffSum +=
-          Math.abs(pixels[i] - prevPixels[i]) +
-          Math.abs(pixels[i + 1] - prevPixels[i + 1]) +
-          Math.abs(pixels[i + 2] - prevPixels[i + 2]);
+        diffSum += Math.abs(pixels[i] - prevPixels[i]) + Math.abs(pixels[i + 1] - prevPixels[i + 1]) + Math.abs(pixels[i + 2] - prevPixels[i + 2]);
       }
       isMotionDetected = diffSum / (totalPixels * 3) > 5.0;
     }
     prevFrameDataRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
+    // STATE MACHINE LOGIC
     if (currentState === "COOLDOWN") {
-      // Wait phase
-    } else if (currentState === "CAMERA_ACTIVE" || currentState === "RECORDING") {
-      if (!isFingerDetected) {
-        if (currentState === "RECORDING") {
-          stopReasonRef.current = "SUCCESS";
-          mediaRecorderRef.current.stop();
-          clearInterval(timerRef.current);
-
-          updateAppState("COOLDOWN");
-          updateStatus("Recording done successfully ✓", "bg-[#12863B]");
-
-          setTimeout(() => {
-            updateAppState("MODAL_OPEN");
-            setShowReferenceModal(true);
-          }, 5000);
+      // Waiting phase, do nothing frame-wise
+    } 
+    else if (currentState === "CAMERA_ACTIVE") {
+        if (isFingerDetected && !isMotionDetected) {
+            updateAppState("WAITING_START");
+            updateStatus("Finger steady. Press 'Start Recording' button.", "bg-[#12863B]");
         } else {
-          updateStatus("No finger, please place finger", "bg-[#05205A]");
-          motionStartTimeRef.current = 0;
+            updateStatus("No steady finger detected. Please place finger.", "bg-[#05205A]");
         }
-      } else {
-        if (isMotionDetected) {
-          if (motionStartTimeRef.current === 0)
-            motionStartTimeRef.current = Date.now();
-
-          if (Date.now() - motionStartTimeRef.current > 5000) {
-            if (currentState === "RECORDING") {
-              stopReasonRef.current = "MOTION";
-              mediaRecorderRef.current.stop();
-              clearInterval(timerRef.current);
-            }
+    } 
+    else if (currentState === "WAITING_START") {
+        if (!isFingerDetected || isMotionDetected) {
             updateAppState("CAMERA_ACTIVE");
-            updateStatus("Too much motion. Recording suspended", "bg-[#CC161C]");
-          } else {
-            updateStatus("Motion detected. Please keep steady (Stationary) finger", "bg-orange-500");
-          }
-        } else {
-          motionStartTimeRef.current = 0;
-          if (currentState === "CAMERA_ACTIVE") {
-            startRecordingLogic();
-          }
-          updateStatus("Finger detected. Recording in process", "bg-[#12863B]");
+            updateStatus("Finger removed or moving. Please place steady finger.", "bg-[#05205A]");
         }
-      }
+    } 
+    else if (currentState === "RECORDING") {
+        if (!isFingerDetected || isMotionDetected) {
+            // Start Warning Timer
+            if (warningStartTimeRef.current === 0) {
+                warningStartTimeRef.current = Date.now();
+            }
+
+            // Play Beep every 1 second
+            if (Date.now() - lastBeepTimeRef.current > 1000) {
+                playWarningBeep();
+                lastBeepTimeRef.current = Date.now();
+            }
+
+            updateStatus("Steady your finger! Warning...", "bg-orange-500");
+
+            // Ignore warning for 5s logic -> DISMISS
+            if (Date.now() - warningStartTimeRef.current > 5000) {
+                stopReasonRef.current = "DISMISSED";
+                if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+                    mediaRecorderRef.current.stop();
+                }
+                if (timerRef.current) clearInterval(timerRef.current);
+                warningStartTimeRef.current = 0;
+                
+                updateAppState("COOLDOWN");
+                updateStatus("Recording Dismissed due to movement.", "bg-[#CC161C]");
+                
+                // Completely stop camera and reset after 3 seconds showing error
+                setTimeout(() => {
+                    stopCamera();
+                }, 3000);
+            }
+        } else {
+            // Finger is steady again - clear warnings
+            if (warningStartTimeRef.current !== 0) {
+                warningStartTimeRef.current = 0;
+                updateStatus("Recording in progress...", "bg-[#12863B]");
+            }
+        }
     }
 
     if (appStateRef.current !== "IDLE" && appStateRef.current !== "MODAL_OPEN") {
       animationFrameIdRef.current = requestAnimationFrame(processVideoFrame);
     }
-  }, [updateAppState]);
+  }, [updateAppState, stopCamera]);
+
+  const fallbackSave = (blob, filename) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+      }, 100);
+  };
 
   const saveAndDownloadFiles = async (finalRefData = referenceData) => {
     setShowReferenceModal(false);
@@ -331,56 +408,76 @@ export default function CGHMHealthDashboard() {
     const safeName = subjectData.name.replace(/[^a-zA-Z0-9]/g, "_");
     const fileNameBase = `${timestamp}_${safeName}`;
 
-    // Download Video Locally
-    if (currentVideoBlobRef.current) {
-      const videoUrl = URL.createObjectURL(currentVideoBlobRef.current);
-      const aVideo = document.createElement("a");
-      aVideo.style.display = "none";
-      aVideo.href = videoUrl;
-      const ext = currentVideoBlobRef.current.extension || 'webm';
-      aVideo.download = `${fileNameBase}.${ext}`;
-      document.body.appendChild(aVideo);
-      aVideo.click();
-      setTimeout(() => {
-        document.body.removeChild(aVideo);
-        URL.revokeObjectURL(videoUrl);
-      }, 100);
-    }
-
-    // Create and Download CSV Locally
-    const headers = ["Timestamp", "ID", "Name", "Age", "Gender", "Mobile", "Height(cm)", "Systolic BP", "Diastolic BP", "Pulse Rate"];
+    // Added Sugar Level to headers and data
+    const headers = ["Timestamp", "ID", "Name", "Age", "Gender", "Mobile", "Height(cm)", "Systolic BP", "Diastolic BP", "Pulse Rate", "Sugar Level"];
     const rowData = [
       new Date().toLocaleString().replace(/,/g, ""),
       subjectData.id, subjectData.name, subjectData.age, subjectData.gender,
       subjectData.mobile || "N/A", subjectData.height || "N/A",
-      finalRefData.sys || "N/A", finalRefData.dia || "N/A", finalRefData.pulse || "N/A",
+      finalRefData.sys || "N/A", finalRefData.dia || "N/A", finalRefData.pulse || "N/A", finalRefData.sugar || "N/A"
     ];
 
     const csvContent = headers.join(",") + "\n" + rowData.join(",");
     const csvBlob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const csvUrl = URL.createObjectURL(csvBlob);
+    let ext = 'webm';
+    
+    // --- ASK FOR LOCATION (File System Access API) ---
+    if (window.showSaveFilePicker && currentVideoBlobRef.current) {
+        try {
+            ext = currentVideoBlobRef.current.extension || 'webm';
+            
+            // 1. Save Video
+            toast("Select folder to save Video...", { icon: '📁' });
+            const videoHandle = await window.showSaveFilePicker({
+                suggestedName: `${fileNameBase}.${ext}`,
+                types: [{ description: 'Video File', accept: { [`video/${ext}`]: [`.${ext}`] } }]
+            });
+            const videoWritable = await videoHandle.createWritable();
+            await videoWritable.write(currentVideoBlobRef.current);
+            await videoWritable.close();
 
-    const aCsv = document.createElement("a");
-    aCsv.style.display = "none";
-    aCsv.href = csvUrl;
-    aCsv.download = `${fileNameBase}.csv`;
-    document.body.appendChild(aCsv);
-    aCsv.click();
-    setTimeout(() => {
-      document.body.removeChild(aCsv);
-      URL.revokeObjectURL(csvUrl);
-    }, 100);
+            // 2. Save CSV
+            toast("Select folder to save Excel/CSV...", { icon: '📁' });
+            const csvHandle = await window.showSaveFilePicker({
+                suggestedName: `${fileNameBase}.csv`,
+                types: [{ description: 'CSV File', accept: { 'text/csv': ['.csv'] } }]
+            });
+            const csvWritable = await csvHandle.createWritable();
+            await csvWritable.write(csvBlob);
+            await csvWritable.close();
 
+            toast.success(`Dono files successfully save ho gayi hain!`);
+        } catch (err) {
+            if (err.name !== 'AbortError') {
+                console.error("File Picker error:", err);
+                toast.error("File Picker fail hua, normal download shuru ho raha hai.");
+                fallbackSave(csvBlob, `${fileNameBase}.csv`);
+                fallbackSave(currentVideoBlobRef.current, `${fileNameBase}.${ext}`);
+            } else {
+                toast("Local save user dwara cancel kiya gaya.", { icon: '⚠️' });
+            }
+        }
+    } else {
+        // Fallback for browsers without File System Access API
+        toast.success("Downloading files...");
+        fallbackSave(csvBlob, `${fileNameBase}.csv`);
+        if (currentVideoBlobRef.current) {
+            ext = currentVideoBlobRef.current.extension || 'webm';
+            fallbackSave(currentVideoBlobRef.current, `${fileNameBase}.${ext}`);
+        }
+    }
+
+    // Completely reset the UI
     stopCamera();
-    toast.success(`Subject ${subjectData.name} ka local data save ho gaya!`);
 
-    // Cloud Upload
+    // --- Cloud Upload (As required, strictly kept intact) ---
     if (currentVideoBlobRef.current) {
       setUploading(true);
       try {
-        toast.loading("🎥 Cloudinary par video upload ho raha hai...", { id: "upload" });
+        toast.loading("🎥 Cloudinary par video auto-upload ho raha hai...", { id: "upload" });
         const uploadedVideoUrl = await uploadToCloudinary(currentVideoBlobRef.current);
         const sellerId = localStorage.getItem("sellerId") || "guest";
+        
         const formData = new FormData();
         formData.append("video", uploadedVideoUrl);
         formData.append("sellerId", sellerId);
@@ -399,7 +496,7 @@ export default function CGHMHealthDashboard() {
         toast.success("✅ Video successfully server par save ho gaya!", { id: "upload" });
       } catch (error) {
         console.error("Upload error:", error);
-        toast.error("Cloud upload fail, lekin local files save ho chuki hain.", { id: "upload", duration: 5000 });
+        toast.error("Cloud upload fail, lekin local files check karein.", { id: "upload", duration: 5000 });
       } finally {
         setUploading(false);
       }
@@ -411,10 +508,7 @@ export default function CGHMHealthDashboard() {
   // ==========================================
   const handlePdfUpload = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      const fileURL = URL.createObjectURL(file);
-      setPdfFileUrl(fileURL);
-    }
+    if (file) setPdfFileUrl(URL.createObjectURL(file));
   };
 
   const handleExcelUpload = (e) => {
@@ -430,10 +524,8 @@ export default function CGHMHealthDashboard() {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const bstr = evt.target.result;
-        const wb = window.XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
+        const wb = window.XLSX.read(evt.target.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
         const data = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
         setExcelData(data);
       } catch (error) {
@@ -447,7 +539,7 @@ export default function CGHMHealthDashboard() {
   const updateCellData = (rowIndex, colIndex, value) => {
     setExcelData((prev) => {
       const newData = [...prev];
-      const actualRowIndex = rowIndex + 1; // +1 because index 0 is Header
+      const actualRowIndex = rowIndex + 1;
       if (!newData[actualRowIndex]) newData[actualRowIndex] = [];
       newData[actualRowIndex][colIndex] = value;
       return newData;
@@ -476,13 +568,8 @@ export default function CGHMHealthDashboard() {
     e.preventDefault();
     const pastedText = (e.clipboardData || window.clipboardData).getData('text');
     if (pastedText) {
-      const cleanText = pastedText.trim();
-      updateCellData(rowIndex, colIndex, cleanText);
-      
-      // Update DOM temporarily for immediate feedback
-      e.target.innerText = cleanText;
-      
-      // Auto-advance
+      updateCellData(rowIndex, colIndex, pastedText.trim());
+      e.target.innerText = pastedText.trim();
       autoAdvance(rowIndex, colIndex);
     }
   };
@@ -492,13 +579,9 @@ export default function CGHMHealthDashboard() {
     setDragHoverCell({ rowIndex: null, colIndex: null });
     const droppedText = e.dataTransfer.getData('text');
     if (droppedText) {
-      const cleanText = droppedText.trim();
-      updateCellData(rowIndex, colIndex, cleanText);
+      updateCellData(rowIndex, colIndex, droppedText.trim());
       setActiveCell({ rowIndex, colIndex });
-      
-      // Update DOM temporarily
-      e.target.innerText = cleanText;
-      
+      e.target.innerText = droppedText.trim();
       autoAdvance(rowIndex, colIndex);
     }
   };
@@ -517,21 +600,18 @@ export default function CGHMHealthDashboard() {
     }
   };
 
-  useEffect(() => {
-    return () => stopCamera();
-  }, [stopCamera]);
-
   return (
     <div className="bg-gray-50 min-h-screen flex flex-col items-center font-sans relative pb-10">
       <Toaster position="top-center" reverseOrder={false} />
 
+      {/* Tabs Layout */}
       <div className={`w-full shadow-md mb-8 flex justify-center border-b-4 border-[#12863B] sticky top-0 z-40 bg-white`}>
         <div className="flex max-w-2xl w-full">
           <button onClick={() => setActiveTab("record")} className={`flex-1 py-4 font-bold text-lg transition-colors ${activeTab === "record" ? "text-white bg-[#05205A]" : "text-gray-500 bg-gray-200 hover:bg-gray-300"}`}>
             🎥 Recording Dashboard
           </button>
           <button onClick={() => setActiveTab("edit")} className={`flex-1 py-4 font-bold text-lg transition-colors ${activeTab === "edit" ? "text-white bg-[#05205A]" : "text-gray-500 bg-gray-200 hover:bg-gray-300"}`}>
-            📝 Data Editor (Smart Split)
+            📝 Data Editor
           </button>
         </div>
       </div>
@@ -571,7 +651,7 @@ export default function CGHMHealthDashboard() {
           {hasFlash && (
             <div className="flex gap-2 w-full mt-2 mb-4 border-t pt-4 border-gray-100">
               <button onClick={() => toggleFlash(true)} className={`flex-1 py-3 px-4 rounded-lg font-bold text-white shadow bg-[#12863B] transition-opacity ${isFlashOn ? "opacity-50 cursor-default" : "hover:opacity-90"}`}>
-                Flash ON (LED)
+                Flash ON
               </button>
               <button onClick={() => toggleFlash(false)} className={`flex-1 py-3 px-4 rounded-lg font-bold text-white shadow bg-[#CC161C] transition-opacity ${!isFlashOn ? "opacity-50 cursor-default" : "hover:opacity-90"}`}>
                 Flash OFF
@@ -579,14 +659,28 @@ export default function CGHMHealthDashboard() {
             </div>
           )}
 
-          <div className="flex gap-4 w-full">
-            {uiAppState === "IDLE" ? (
+          <div className="flex flex-wrap gap-4 w-full">
+            {uiAppState === "IDLE" && (
               <button onClick={() => { setSubjectData({ id: "", name: "", age: "", gender: "", mobile: "", height: "" }); setShowSubjectModal(true); }} className="flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#05205A] hover:opacity-90">
                 Camera Start Karein
               </button>
-            ) : (
-              <button onClick={stopCamera} disabled={uploading} className={`flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#CC161C] transition-opacity ${uploading ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"}`}>
-                Cancel / Stop Process
+            )}
+
+            {uiAppState === "WAITING_START" && (
+              <button onClick={startRecordingLogic} className="flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#12863B] animate-bounce hover:opacity-90">
+                ▶ Start Recording
+              </button>
+            )}
+
+            {uiAppState === "RECORDING" && (
+              <button onClick={stopRecordingSuccess} className="flex-1 py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#05205A] hover:bg-[#041642] transition-colors">
+                ⏹ Stop Recording (Save)
+              </button>
+            )}
+
+            {(uiAppState !== "IDLE" && uiAppState !== "MODAL_OPEN") && (
+              <button onClick={stopCamera} disabled={uploading} className={`py-4 px-6 rounded-lg font-bold text-white text-lg shadow-lg bg-[#CC161C] transition-opacity ${uploading ? "opacity-50 cursor-not-allowed" : "hover:opacity-90"}`}>
+                Cancel
               </button>
             )}
           </div>
@@ -597,7 +691,6 @@ export default function CGHMHealthDashboard() {
       {activeTab === "edit" && (
         <div className="bg-white p-6 rounded-2xl shadow-xl w-11/12 max-w-[98%] xl:max-w-[90vw] flex flex-col lg:flex-row gap-6 mb-10 h-[80vh] min-h-[600px]">
           
-          {/* LEFT PANEL: PDF VIEWER */}
           <div className="flex-1 flex flex-col border-2 border-gray-200 rounded-xl overflow-hidden relative bg-gray-50 h-full">
             <div className="bg-[#eef2f6] p-4 border-l-4 border-[#05205A] flex items-center justify-between z-10 shadow-sm">
               <h3 className="text-[#05205A] font-bold flex items-center gap-2 text-lg">📄 1. PDF Viewer</h3>
@@ -609,12 +702,11 @@ export default function CGHMHealthDashboard() {
             </div>
           </div>
 
-          {/* RIGHT PANEL: EXCEL EDITOR */}
           <div className="flex-1 flex flex-col border-2 border-gray-200 rounded-xl overflow-hidden relative bg-gray-50 h-full">
             <div className="bg-[#eef2f6] p-4 border-l-4 border-[#12863B] flex flex-col sm:flex-row sm:items-center justify-between z-10 gap-3 shadow-sm">
               <div>
                 <h3 className="text-[#05205A] font-bold flex items-center gap-2 text-lg">📊 2. Excel Editor</h3>
-                <span className="text-xs text-[#CC161C] font-semibold mt-1 block">⚡ Trick: Select in PDF &gt; Ctrl+C &gt; Click Cell &gt; Ctrl+V (ya Drag-Drop)</span>
+                <span className="text-xs text-[#CC161C] font-semibold mt-1 block">⚡ Trick: Select in PDF &gt; Ctrl+C &gt; Click Cell &gt; Ctrl+V</span>
               </div>
               <div className="flex flex-col sm:flex-row items-center gap-3">
                   <input type="file" accept=".xlsx, .xls, .csv" onChange={handleExcelUpload} className="text-sm cursor-pointer w-full sm:w-48 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#12863B] file:text-white hover:file:bg-[#0f7332]" />
@@ -645,19 +737,13 @@ export default function CGHMHealthDashboard() {
                               <tr key={rowIndex} className="hover:bg-gray-50 transition-colors">
                                   {excelData[0].map((_, colIndex) => {
                                       const cellValue = row[colIndex] || "";
-                                      
                                       const isActive = activeCell.rowIndex === rowIndex && activeCell.colIndex === colIndex;
                                       const isDragHover = dragHoverCell.rowIndex === rowIndex && dragHoverCell.colIndex === colIndex;
                                       
-                                      // CGHM Theme Conditional Classes for Cells
                                       let cellClasses = "border border-gray-300 p-3 whitespace-nowrap outline-none transition-all duration-200 text-sm ";
-                                      if (isActive) {
-                                          cellClasses += "bg-[#e8f5e9] outline-[3px] outline-[#12863B] outline text-black font-semibold z-10 relative ";
-                                      } else if (isDragHover) {
-                                          cellClasses += "bg-[#bbf7d0] border-2 border-dashed border-[#12863B] shadow-inner ";
-                                      } else {
-                                          cellClasses += "focus:bg-[#f0f4fa] focus:outline focus:outline-2 focus:outline-[#05205A] ";
-                                      }
+                                      if (isActive) cellClasses += "bg-[#e8f5e9] outline-[3px] outline-[#12863B] outline text-black font-semibold z-10 relative ";
+                                      else if (isDragHover) cellClasses += "bg-[#bbf7d0] border-2 border-dashed border-[#12863B] shadow-inner ";
+                                      else cellClasses += "focus:bg-[#f0f4fa] focus:outline focus:outline-2 focus:outline-[#05205A] ";
 
                                       return (
                                           <td 
@@ -684,7 +770,6 @@ export default function CGHMHealthDashboard() {
                )}
             </div>
           </div>
-
         </div>
       )}
 
@@ -723,16 +808,21 @@ export default function CGHMHealthDashboard() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border-t-8 border-[#12863B] transform transition-all">
             <div className="p-6 text-center">
               <h2 className="text-2xl font-bold text-gray-800 mb-2">Recording Complete!</h2>
-              <p className="text-sm text-gray-500 mb-6">Aap reference values abhi enter kar sakte hain ya skip karke baad me Data Editor me daal sakte hain.</p>
+              <p className="text-sm text-gray-500 mb-6">Apni parameters niche enter karein. Location aapko next step me puchi jayegi.</p>
               <form onSubmit={(e) => { e.preventDefault(); saveAndDownloadFiles(referenceData); }} className="space-y-4 text-left max-h-[70vh] overflow-y-auto px-1">
                 <div className="grid grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Systolic BP</label><input type="text" placeholder="e.g. 120" value={referenceData.sys} onChange={(e) => setReferenceData({ ...referenceData, sys: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
-                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Diastolic BP</label><input type="text" placeholder="e.g. 80" value={referenceData.dia} onChange={(e) => setReferenceData({ ...referenceData, dia: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Systolic BP</label><input type="text" placeholder="120" value={referenceData.sys} onChange={(e) => setReferenceData({ ...referenceData, sys: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Diastolic BP</label><input type="text" placeholder="80" value={referenceData.dia} onChange={(e) => setReferenceData({ ...referenceData, dia: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
                 </div>
-                <div><label className="block text-sm font-bold text-gray-700 mb-1">Pulse Rate</label><input type="text" placeholder="e.g. 72" value={referenceData.pulse} onChange={(e) => setReferenceData({ ...referenceData, pulse: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Pulse Rate</label><input type="text" placeholder="72" value={referenceData.pulse} onChange={(e) => setReferenceData({ ...referenceData, pulse: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none" /></div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Sugar Level</label><input type="text" placeholder="110" value={referenceData.sugar} onChange={(e) => setReferenceData({ ...referenceData, sugar: e.target.value })} className="w-full border-2 border-gray-200 rounded-lg p-2 focus:border-[#05205A] outline-none bg-green-50" /></div>
+                </div>
+
                 <div className="flex gap-3 pt-6 sticky bottom-0 bg-white z-10">
-                  <button type="button" disabled={uploading} onClick={() => saveAndDownloadFiles({ sys: "", dia: "", pulse: "" })} className="flex-1 py-3 px-4 border-2 border-gray-300 rounded-lg font-bold hover:bg-gray-50 disabled:opacity-50">Skip & Save</button>
-                  <button type="submit" disabled={uploading} className="flex-1 py-3 px-4 bg-[#05205A] text-white rounded-lg font-bold hover:opacity-90 flex items-center justify-center disabled:opacity-50">{uploading ? "Saving..." : "Save Data"}</button>
+                  <button type="button" disabled={uploading} onClick={() => saveAndDownloadFiles({ sys: "", dia: "", pulse: "", sugar: "" })} className="flex-1 py-3 px-4 border-2 border-gray-300 rounded-lg font-bold hover:bg-gray-50 disabled:opacity-50 text-sm">Skip & Select Location</button>
+                  <button type="submit" disabled={uploading} className="flex-2 py-3 px-4 bg-[#05205A] text-white rounded-lg font-bold hover:opacity-90 flex items-center justify-center disabled:opacity-50">Save Data</button>
                 </div>
               </form>
             </div>
