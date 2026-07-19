@@ -107,7 +107,7 @@ const Login = () => {
 
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      navigate("/Monitoring");
+      navigate("/");
     } catch (err) {
       setError("Invalid email or password");
     }
